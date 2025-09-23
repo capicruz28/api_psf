@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import usuarios, auth, menus, roles, permisos, areas
+from app.api.v1.endpoints import usuarios, auth, menus, roles, permisos, areas, autorizacion
 
 api_router = APIRouter()
 
@@ -38,4 +38,10 @@ api_router.include_router(
     prefix="/areas", 
     tags=["Areas"]
     )
+
+api_router.include_router(
+    autorizacion.router,
+    prefix="/autorizacion",
+    tags=["Autorización de Procesos"]
+)
 

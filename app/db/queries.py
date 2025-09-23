@@ -48,41 +48,65 @@ def execute_auth_query(query: str, params: tuple = ()) -> Dict[str, Any]:
                 cursor.close()
 
 def execute_insert(query: str, params: tuple = (), connection_type: DatabaseConnection = DatabaseConnection.DEFAULT) -> Dict[str, Any]:
+    """
+    Ejecuta una sentencia INSERT y retorna:
+      - Los datos retornados por OUTPUT si existen
+      - Siempre incluye 'rows_affected' en la respuesta
+    """
     with get_db_connection(connection_type) as conn:
         try:
             cursor = conn.cursor()
             cursor.execute(query, params)
 
-            if cursor.description:
+            # Verificar OUTPUT
+            if cursor.description:  
                 columns = [column[0] for column in cursor.description]
-                result = dict(zip(columns, cursor.fetchone()))
+                output_data = cursor.fetchone()
+                result = dict(zip(columns, output_data)) if output_data else {}
             else:
                 result = {}
 
+            # Importante: filas afectadas
+            rows_affected = cursor.rowcount
+            result["rows_affected"] = rows_affected
+
             conn.commit()
-            logger.info("Inserción exitosa")
+            logger.info(f"Inserción exitosa, filas afectadas: {rows_affected}")
             return result
+
         except Exception as e:
             conn.rollback()
             logger.error(f"Error en execute_insert: {str(e)}")
-            raise DatabaseError(status_code=500, detail=f"Error en la inserción: {str(e)}")
+            raise DatabaseError(
+                status_code=500,
+                detail=f"Error en la inserción: {str(e)}"
+            )
         finally:
-            cursor.close()
+            cursor.close()                
 
 def execute_update(query: str, params: tuple = (), connection_type: DatabaseConnection = DatabaseConnection.DEFAULT) -> Dict[str, Any]:
     with get_db_connection(connection_type) as conn:
         try:
             cursor = conn.cursor()
             cursor.execute(query, params)
-
+            
+            # Obtener número de filas afectadas
+            rows_affected = cursor.rowcount
+            
+            # Si hay OUTPUT, obtener los datos
             if cursor.description:
                 columns = [column[0] for column in cursor.description]
-                result = dict(zip(columns, cursor.fetchone()))
+                output_data = cursor.fetchone()
+                result = dict(zip(columns, output_data)) if output_data else {}
             else:
                 result = {}
-
+            
             conn.commit()
-            logger.info("Actualización exitosa")
+            
+            # CAMBIO CLAVE: Siempre incluir rows_affected en la respuesta
+            result['rows_affected'] = rows_affected
+            
+            logger.info(f"Actualización exitosa, filas afectadas: {rows_affected}")
             return result
 
         except Exception as e:
