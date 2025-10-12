@@ -1,13 +1,16 @@
+from typing import Any
+import logging
+import time
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
 from app.core.config import settings
 from app.core.exceptions import configure_exception_handlers
 from app.api.v1.api import api_router
 from app.db.connection import get_db_connection
 from app.core.logging_config import setup_logging
-import logging
-from typing import Any
 
 # Configurar logging
 setup_logging()
@@ -22,10 +25,11 @@ def create_application() -> FastAPI:
         version=settings.VERSION,
         description=settings.DESCRIPTION,
         docs_url="/docs",
-        redoc_url="/redoc"
+        redoc_url="/redoc",
+        redirect_slashes=False  # ✅ Deshabilitar redirecciones automáticas
     )
 
-    # Configurar CORS
+    # CORS: orígenes explícitos y credenciales habilitadas
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.ALLOWED_ORIGINS,
@@ -34,22 +38,36 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Configurar manejadores de excepciones
+    # Manejadores de excepciones custom
     configure_exception_handlers(app)
 
-    # Incluir las rutas de la API v1
+    # Rutas API v1
     app.include_router(api_router, prefix=settings.API_V1_STR)
 
-    # Middleware para logging de requests
+    # Middleware de logging con timing
     @app.middleware("http")
     async def log_requests(request: Request, call_next: Any):
-        logger.info(f"Incoming request: {request.method} {request.url}")
+        start = time.perf_counter()
+        logger.info(f"{request.client.host} -> {request.method} {request.url.path}")
+        try:
+            response = await call_next(request)
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+            logger.info(f"{request.client.host} <- {request.method} {request.url.path} {duration_ms:.1f}ms")
+        return response
+
+    # Middleware para añadir headers de seguridad básicos a todas las respuestas
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next: Any):
         response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
         return response
 
     return app
 
-# Crear la instancia de la aplicación
+# Instancia de la aplicación
 app = create_application()
 
 # Rutas base
@@ -70,12 +88,8 @@ async def health_check():
     Endpoint para verificar el estado de la aplicación y la conexión a la BD
     """
     try:
-        # Verificar conexión a la base de datos
         with get_db_connection() as conn:
-            if conn:
-                db_status = "connected"
-            else:
-                db_status = "disconnected"
+            db_status = "connected" if conn else "disconnected"
     except Exception as e:
         logger.error(f"Error en health check: {str(e)}")
         db_status = "error"
@@ -86,7 +100,7 @@ async def health_check():
         "database": db_status
     }
 
-# Para compatibilidad con el código existente
+# Compatibilidad con código existente
 @app.get("/api/test")
 async def test_db():
     try:
@@ -115,7 +129,6 @@ async def check_drivers():
 @app.get("/debug-env")
 async def debug_env():
     """Endpoint para verificar variables de entorno (sin mostrar passwords)"""
-    from app.core.config import settings
     return {
         "db_server": settings.DB_SERVER,
         "db_user": settings.DB_USER,

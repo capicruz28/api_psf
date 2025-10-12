@@ -8,7 +8,8 @@ from app.schemas.autorizacion import (
     AutorizacionUpdate,
     AutorizacionResponse,
     FinalizarTareoRequest, 
-    FinalizarTareoResponse
+    FinalizarTareoResponse,
+    ReporteAutorizacionParams
 )
 
 # Importar Servicios
@@ -30,7 +31,7 @@ router = APIRouter()
 require_admin = RoleChecker(["Administrador"])
 
 @router.get(
-    "/pendientes",
+    "/pendientes/",  # ✅ CAMBIO: Agregado /
     response_model=List[PendienteAutorizacionRead],
     summary="Obtener procesos pendientes de autorización",
     description="Ejecuta el SP sp_pendiente_autorizacion y devuelve todos los registros pendientes. **Requiere rol 'Administrador'.**"
@@ -65,7 +66,7 @@ async def obtener_pendientes_autorizacion():
         )
 
 @router.put(
-    "/autorizar",
+    "/autorizar/",  # ✅ CAMBIO: Agregado /
     response_model=AutorizacionResponse,
     summary="Autorizar un proceso específico",
     description="Actualiza el campo sautor de un registro específico para autorizarlo. **Requiere rol 'Administrador'.**"
@@ -79,7 +80,7 @@ async def autorizar_proceso(
     
     - **lote**: lote del proceso a autorizar
     - **fecha_destajo**: Fecha del destajo (formato ISO)
-    - **nuevo_estado**: Estado a aplicar (1 = autorizado, por defecto)
+    - **nuevo_estado**: Estado a aplicar (A = autorizado, R=rechazado, P=pendiente)
     """
     try:
         logger.debug(f"Endpoint autorizar_proceso llamado para el lote {autorizacion_data.lote}")
@@ -118,7 +119,7 @@ async def autorizar_proceso(
         )
 
 @router.get(
-    "/pendientes/count",
+    "/pendientes/count/",  # ✅ CAMBIO: Agregado /
     response_model=Dict[str, Any],
     summary="Obtener conteo de procesos pendientes",
     description="Devuelve solo el número total de registros pendientes de autorización. **Requiere autenticación.**",
@@ -146,7 +147,7 @@ async def contar_pendientes():
         )
 
 @router.put(
-    "/autorizar-multiple",
+    "/autorizar-multiple/",  # ✅ CAMBIO: Agregado /
     response_model=Dict[str, Any],
     summary="Autorizar múltiples procesos",
     description="Autoriza varios procesos en una sola operación. **Requiere rol 'Administrador'.**"
@@ -190,7 +191,7 @@ async def autorizar_procesos_multiple(
         )
 
 @router.put(
-    "/finalizar-tareo",
+    "/finalizar-tareo/",  # ✅ CAMBIO: Agregado /
     response_model=FinalizarTareoResponse,
     summary="Finalizar un tareo",
     description="Actualiza hora_inicio, hora_fin, horas, kilos, observaciones de un trabajador en un lote/proceso/subproceso/fecha."
@@ -208,4 +209,34 @@ async def finalizar_tareo(data: FinalizarTareoRequest):
         raise HTTPException(
             status_code=500,
             detail="Error interno del servidor al finalizar el tareo."
+        )
+
+@router.post(
+    "/reporte/",  # ✅ CAMBIO: Agregado /
+    response_model=List[PendienteAutorizacionRead],
+    summary="Obtener reporte de autorización",
+    description="Ejecuta el SP sp_reporte_autorizacion_destajo con rango de fechas. **Requiere rol 'Administrador'.**"
+)
+async def obtener_reporte_autorizacion(params: ReporteAutorizacionParams):
+    """
+    Obtiene todos los registros del reporte de autorización en un rango de fechas especificado.
+    - **fecha_inicio**: Fecha inicial del rango
+    - **fecha_fin**: Fecha final del rango
+    """
+    try:
+        logger.debug(f"Endpoint obtener_reporte_autorizacion llamado")
+        reporte = await AutorizacionService.get_reporte_autorizacion(
+            fecha_inicio=params.fecha_inicio.isoformat(),
+            fecha_fin=params.fecha_fin.isoformat()
+        )
+        return reporte
+    except ValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    except ServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    except Exception as e:
+        logger.exception(f"Error inesperado en endpoint obtener_reporte_autorizacion: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al obtener reporte de autorización."
         )

@@ -53,7 +53,7 @@ require_admin = RoleChecker(["Administrador"])
 
 # --- Endpoint para Asignar/Actualizar Permisos ---
 @router.put(
-    "/roles/{rol_id}/menus/{menu_id}",
+    "/roles/{rol_id}/menus/{menu_id}/",  # ✅ CAMBIO: Agregado /
     response_model=PermisoRead,
     summary="Asignar o actualizar permisos de un rol sobre un menú",
     description="Establece los permisos (ver, editar, eliminar) para un rol específico sobre un menú específico. Si el permiso no existe, se crea. Si existe, se actualiza con los valores proporcionados. **Requiere rol 'admin'.**",
@@ -90,7 +90,7 @@ async def set_permission(
 
 # --- Endpoint para Obtener Permisos de un Rol ---
 @router.get(
-    "/roles/{rol_id}/permisos",
+    "/roles/{rol_id}/permisos/",  # ✅ CAMBIO: Agregado /
     response_model=List[PermisoReadWithMenu], # Usamos el schema con datos del menú
     summary="Obtener todos los permisos de un rol",
     description="Devuelve una lista de todos los permisos asignados a un rol específico, incluyendo detalles del menú asociado. **Requiere rol 'admin'.**",
@@ -116,7 +116,7 @@ async def get_permissions_for_role(
 
 # --- Endpoint para Obtener Permiso Específico ---
 @router.get(
-    "/roles/{rol_id}/menus/{menu_id}",
+    "/roles/{rol_id}/menus/{menu_id}/",  # ✅ CAMBIO: Agregado /
     response_model=PermisoRead,
     summary="Obtener el permiso específico de un rol sobre un menú",
     description="Devuelve los detalles del permiso de un rol sobre un menú específico. **Requiere rol 'admin'.**",
@@ -144,7 +144,7 @@ async def get_specific_permission(
 
 # --- Endpoint para Revocar Permiso ---
 @router.delete(
-    "/roles/{rol_id}/menus/{menu_id}",
+    "/roles/{rol_id}/menus/{menu_id}/",  # ✅ CAMBIO: Agregado /
     response_model=Dict[str, str], # Devuelve un mensaje de éxito
     summary="Revocar el permiso de un rol sobre un menú",
     description="Elimina la asignación de permisos entre un rol y un menú. **Requiere rol 'admin'.**",

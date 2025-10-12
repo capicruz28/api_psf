@@ -35,9 +35,11 @@ class PendienteAutorizacionRead(BaseModel):
     kilos: float = Field(..., description="Kilos procesados")
     tarifa: float = Field(..., description="Tarifa por hora/kilo")
     importe_total: float = Field(..., description="Importe total")
-    estado_autorizado: int = Field(..., description="Estado de autorización (0=pendiente, 1=autorizado)")
+    estado_autorizado: str = Field(..., description="Estado de autorización (P=Pendiente, A=Autorizado, R=Rechazado)")
     observacion: Optional[str]  = Field(..., description="Observacion general")
     detalle_observacion: Optional[str]  = Field(..., description="Observacion por trabajador")
+    fecha_autorizacion: Optional[datetime] = Field(..., description="Fecha del autorizacion")
+    observacion_autorizacion: Optional[str]  = Field(..., description="Observacion de autorizacion")
 
     class Config:
         from_attributes = True
@@ -52,7 +54,8 @@ class AutorizacionUpdate(BaseModel):
     fecha_destajo: datetime = Field(..., description="Fecha del destajo")
     cod_proceso: str = Field(..., description="Código del proceso")
     cod_subproceso: str = Field(..., description="Código del subproceso")
-    nuevo_estado: int = Field(1, description="Nuevo estado de autorización (1=autorizado)")
+    nuevo_estado: str = Field(..., description="Nuevo estado de autorización (P=Pendiente, A=Autorizado, R=Rechazado)")
+    observacion_autorizacion: str = Field(..., description="Observacion de la autorización")
 
     class Config:
         json_encoders = {
@@ -66,7 +69,8 @@ class AutorizacionResponse(BaseModel):
     fecha_destajo: datetime = Field(..., description="Fecha del destajo")
     cod_proceso: str = Field(..., description="Código del proceso autorizado")
     cod_subproceso: str = Field(..., description="Código del subproceso autorizado")
-    nuevo_estado: int = Field(..., description="Nuevo estado aplicado")
+    nuevo_estado: str = Field(..., description="Nuevo estado aplicado")
+    observacion_autorizacion: str = Field(..., description="Observacion de la autorización")
     
     class Config:
         json_encoders = {
@@ -101,3 +105,8 @@ class FinalizarTareoResponse(BaseModel):
     cod_proceso: str
     cod_subproceso: Optional[str]
     cod_trabajador: str
+
+class ReporteAutorizacionParams(BaseModel):
+    """Parámetros para el SP sp_reporte_autorizacion_destajo"""
+    fecha_inicio: datetime = Field(..., description="Fecha de inicio del rango")
+    fecha_fin: datetime = Field(..., description="Fecha de fin del rango")

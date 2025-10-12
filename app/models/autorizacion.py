@@ -34,11 +34,13 @@ class PendienteAutorizacion(BaseModel):
     kilos: float
     tarifa: float
     importe_total: float
-    estado_autorizado: int
+    estado_autorizado: str
     observacion: str
     detalle_observacion: str
+    fecha_autorizacion: datetime
+    observacion_autorizacion: str
 
 class AutorizacionUpdate(BaseModel):
     cod_trabajador: str
     fecha_destajo: datetime
-    nuevo_estado: int = 1  # Por defecto autorizado
+    nuevo_estado: str # e.g., 'A' para autorizado, 'R' para rechazado o 'P' para pendiente

@@ -74,7 +74,7 @@ async def obtener_areas_paginadas_endpoint(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al obtener áreas.")
 
 @router.get(
-    "/list",
+    "/list/",  # ✅ CAMBIO: Agregado /
     response_model=List[AreaSimpleList], # Devuelve una lista del nuevo schema simple
     summary="Obtener lista simple de áreas activas (para selectores)",
     description="Devuelve solo el ID y el nombre de todas las áreas activas. Ideal para poblar listas desplegables.",
@@ -83,7 +83,7 @@ async def obtener_areas_paginadas_endpoint(
 )
 async def obtener_lista_simple_areas_endpoint():
     """Obtiene una lista simplificada (ID, Nombre) de todas las áreas activas."""
-    logger.info("Solicitud GET /areas/list recibida.")
+    logger.info("Solicitud GET /areas/list/ recibida.")
     try:
         # Necesitarás añadir un método al AreaService para esto
         areas_list = await AreaService.obtener_lista_simple_areas_activas()
@@ -92,19 +92,19 @@ async def obtener_lista_simple_areas_endpoint():
         logger.error(f"Error de servicio al obtener lista simple de áreas: {se.detail}")
         raise HTTPException(status_code=se.status_code, detail=se.detail)
     except Exception as e:
-        logger.exception("Error inesperado en endpoint GET /areas/list")
+        logger.exception("Error inesperado en endpoint GET /areas/list/")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al obtener la lista de áreas.")
 
 # --- Endpoint GET por ID ---
 @router.get(
-    "/{area_id}",
+    "/{area_id}/",  # ✅ CAMBIO: Agregado /
     response_model=AreaRead,
     summary="Obtener un área por ID (Admin)",
     dependencies=[ADMIN_ROLE_CHECK]
 )
 async def obtener_area_por_id_endpoint(area_id: int):
     """Obtiene los detalles de un área específica por su ID."""
-    logger.debug(f"Solicitud GET /areas/{area_id} recibida.")
+    logger.debug(f"Solicitud GET /areas/{area_id}/ recibida.")
     try:
         # Llama al método en español del servicio
         area = await AreaService.obtener_area_por_id(area_id)
@@ -123,14 +123,14 @@ async def obtener_area_por_id_endpoint(area_id: int):
 
 # --- Endpoint PUT para Actualizar ---
 @router.put(
-    "/{area_id}",
+    "/{area_id}/",  # ✅ CAMBIO: Agregado /
     response_model=AreaRead,
     summary="Actualizar un área existente (Admin)",
     dependencies=[ADMIN_ROLE_CHECK]
 )
 async def actualizar_area_endpoint(area_id: int, area_in: AreaUpdate = Body(...)):
     """Actualiza la información de un área existente."""
-    logger.info(f"Solicitud PUT /areas/{area_id} recibida.")
+    logger.info(f"Solicitud PUT /areas/{area_id}/ recibida.")
     # Pequeña validación para evitar cuerpos vacíos que el servicio también rechazaría
     update_data = area_in.model_dump(exclude_unset=True)
     if not update_data:
@@ -146,12 +146,12 @@ async def actualizar_area_endpoint(area_id: int, area_in: AreaUpdate = Body(...)
         logger.warning(f"Error de servicio al actualizar área {area_id}: {se.detail} (Status: {se.status_code})")
         raise HTTPException(status_code=se.status_code, detail=se.detail)
     except Exception as e:
-        logger.exception(f"Error inesperado en endpoint PUT /areas/{area_id}")
+        logger.exception(f"Error inesperado en endpoint PUT /areas/{area_id}/")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al actualizar área.")
 
 # --- Endpoint DELETE para Desactivar ---
 @router.delete(
-    "/{area_id}",
+    "/{area_id}/",  # ✅ CAMBIO: Agregado /
     # Cambia el response_model a AreaRead, ya que el servicio devuelve el objeto actualizado
     response_model=AreaRead,
     status_code=status.HTTP_200_OK, # 200 OK es apropiado para una actualización de estado
@@ -160,7 +160,7 @@ async def actualizar_area_endpoint(area_id: int, area_in: AreaUpdate = Body(...)
 )
 async def desactivar_area_endpoint(area_id: int):
     """Desactiva un área estableciendo 'es_activo' a False."""
-    logger.info(f"Solicitud DELETE /areas/{area_id} (desactivar) recibida.")
+    logger.info(f"Solicitud DELETE /areas/{area_id}/ (desactivar) recibida.")
     try:
         # Llama al método unificado del servicio pasando activar=False
         deactivated_area = await AreaService.cambiar_estado_area(area_id, activar=False)
@@ -170,12 +170,12 @@ async def desactivar_area_endpoint(area_id: int):
         logger.warning(f"No se pudo desactivar área {area_id}: {se.detail} (Status: {se.status_code})")
         raise HTTPException(status_code=se.status_code, detail=se.detail)
     except Exception as e:
-        logger.exception(f"Error inesperado en endpoint DELETE /areas/{area_id}")
+        logger.exception(f"Error inesperado en endpoint DELETE /areas/{area_id}/")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al desactivar área.")
 
 # --- Endpoint PUT para Reactivar ---
 @router.put(
-    "/{area_id}/reactivate",
+    "/{area_id}/reactivate/",  # ✅ CAMBIO: Agregado /
     # Cambia el response_model a AreaRead
     response_model=AreaRead,
     summary="Reactivar un área desactivada (Admin)",
@@ -183,7 +183,7 @@ async def desactivar_area_endpoint(area_id: int):
 )
 async def reactivar_area_endpoint(area_id: int):
     """Reactiva un área estableciendo 'es_activo' a True."""
-    logger.info(f"Solicitud PUT /areas/{area_id}/reactivate recibida.")
+    logger.info(f"Solicitud PUT /areas/{area_id}/reactivate/ recibida.")
     try:
         # Llama al método unificado del servicio pasando activar=True
         reactivated_area = await AreaService.cambiar_estado_area(area_id, activar=True)
@@ -193,5 +193,5 @@ async def reactivar_area_endpoint(area_id: int):
         logger.warning(f"No se pudo reactivar área {area_id}: {se.detail} (Status: {se.status_code})")
         raise HTTPException(status_code=se.status_code, detail=se.detail)
     except Exception as e:
-        logger.exception(f"Error inesperado en endpoint PUT /areas/{area_id}/reactivate")
+        logger.exception(f"Error inesperado en endpoint PUT /areas/{area_id}/reactivate/")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al reactivar área.")

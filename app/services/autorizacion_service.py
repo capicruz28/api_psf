@@ -1,6 +1,7 @@
 # app/services/autorizacion_service.py
+import asyncio
 from typing import List, Dict, Optional
-from app.db.queries import execute_query, execute_update
+from app.db.queries import execute_query, execute_update, execute_procedure_params
 from app.core.exceptions import ServiceError, ValidationError
 from app.core.logging_config import get_logger
 
@@ -32,7 +33,7 @@ class AutorizacionService:
             raise ServiceError(status_code=500, detail=f"Error obteniendo pendientes de autorización: {str(e)}")
     
     @staticmethod
-    async def autorizar_proceso(lote: str, fecha_destajo: str, cod_proceso: str, cod_subproceso: str, nuevo_estado: int = 1) -> Dict:
+    async def autorizar_proceso(lote: str, fecha_destajo: str, cod_proceso: str, cod_subproceso: str, nuevo_estado: str, observacion_autorizacion: str = "") -> Dict:
         """
         Actualiza el estado de autorización de un registro específico en pdespe_supervisor00.
         """
@@ -67,14 +68,14 @@ class AutorizacionService:
                     "nuevo_estado": nuevo_estado
                 }
             
-            # Actualizar el estado de autorización
+            # Actualizar el estado de autorización y la observación
             update_query = """
             UPDATE dbo.pdespe_supervisor00 
-            SET sautor = ? 
+            SET sautor = ?, fautor = GETDATE(), obsaut = ?
             WHERE dlotes = ? AND fdesta = ? and cproce = ? and csubpr = ?
             """
             
-            result = execute_update(update_query, (nuevo_estado, lote, fecha_destajo, cod_proceso, cod_subproceso))
+            result = execute_update(update_query, (nuevo_estado, observacion_autorizacion, lote, fecha_destajo, cod_proceso, cod_subproceso))
 
             # ✅ Ahora chequear rows_affected
             if result.get('rows_affected', 0) > 0:
@@ -86,7 +87,8 @@ class AutorizacionService:
                     "cod_proceso": cod_proceso,
                     "cod_subproceso": cod_subproceso,
                     "estado_anterior": current_status,
-                    "nuevo_estado": nuevo_estado
+                    "nuevo_estado": nuevo_estado,
+                    "observacion_autorizacion": observacion_autorizacion
                 }
             else:
                 logger.warning(f"No se encontró registro para actualizar: {lote}")
@@ -157,6 +159,7 @@ class AutorizacionService:
                     cod_proceso = auth_data.get('cod_proceso')
                     cod_subproceso = auth_data.get('cod_subproceso')
                     nuevo_estado = auth_data.get('nuevo_estado', 1)
+                    observacion_autorizacion = auth_data.get('observacion_autorizacion', '')
                     
                     if not lote or not fecha_destajo:
                         fallidos += 1
@@ -164,7 +167,14 @@ class AutorizacionService:
                         continue
                     
                     # Usar el método individual para cada autorización
-                    await AutorizacionService.autorizar_proceso(lote, fecha_destajo, cod_proceso, cod_subproceso, nuevo_estado)
+                    await AutorizacionService.autorizar_proceso(
+                        lote, 
+                        fecha_destajo, 
+                        cod_proceso, 
+                        cod_subproceso, 
+                        nuevo_estado, 
+                        observacion_autorizacion
+                    )
                     exitosos += 1
                     
                 except Exception as e:
@@ -264,3 +274,39 @@ class AutorizacionService:
         except Exception as e:
             logger.exception(f"Error inesperado en finalizar_tareo: {str(e)}")
             raise ServiceError(status_code=500, detail=f"Error al finalizar el tareo: {str(e)}")
+        
+    @staticmethod
+    async def get_reporte_autorizacion(fecha_inicio: str, fecha_fin: str) -> List[Dict]:
+        """
+        Ejecuta el SP sp_reporte_autorizacion_destajo con parámetros de rango de fechas.
+        Usa execute_procedure_params para mejor performance.
+        """
+        try:
+            # ✅ EXTRAER SOLO LA PARTE DE LA FECHA (YYYY-MM-DD)
+            # Esto elimina la parte 'T00:00:00' si existe.
+            fecha_inicio_solo_fecha = fecha_inicio.split('T')[0]
+            fecha_fin_solo_fecha = fecha_fin.split('T')[0]
+            logger.info(f"Ejecutando SP sp_reporte_autorizacion_destajo con rango {fecha_inicio_solo_fecha} a {fecha_fin_solo_fecha}")
+
+            # ✅ Usar execute_procedure_params en lugar de execute_query
+            params = {
+                "fecha_inicio": fecha_inicio_solo_fecha,
+                "fecha_fin": fecha_fin_solo_fecha
+            }
+
+            results = await asyncio.to_thread(
+            execute_procedure_params,
+            "dbo.sp_reporte_autorizacion_destajo",
+            params
+            )
+
+            if not results:
+                logger.info("El SP no devolvió resultados")
+                return []
+
+            logger.info(f"Se obtuvieron {len(results)} registros en el reporte")
+            return results
+
+        except Exception as e:
+            logger.exception(f"Error ejecutando SP sp_reporte_autorizacion_destajo: {str(e)}")
+            raise ServiceError(status_code=500, detail=f"Error obteniendo reporte de autorización: {str(e)}")

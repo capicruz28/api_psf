@@ -27,7 +27,7 @@ require_admin = RoleChecker(["Administrador"])
 
 # --- Endpoint para Crear Roles (SIN CAMBIOS) ---
 @router.post(
-    "/",
+    "/",  # ✅ YA TIENE /
     response_model=RolRead,
     status_code=status.HTTP_201_CREATED,
     summary="Crear un nuevo rol",
@@ -58,7 +58,7 @@ async def create_rol(
 
 # --- Endpoint para Listar Roles (PAGINADO) (SIN CAMBIOS DESDE LA ÚLTIMA VERSIÓN) ---
 @router.get(
-    "/",
+    "/",  # ✅ YA TIENE /
     response_model=PaginatedRolResponse,
     summary="Obtener lista paginada de roles",
     description="Obtiene una lista paginada de roles (activos e inactivos), permitiendo búsqueda por nombre o descripción. **Requiere rol 'Administrador'.**",
@@ -93,7 +93,7 @@ async def read_roles_paginated(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al obtener roles paginados.")
 
 @router.get( # <--- Asegúrate que esta línea NO tenga espacios/tabs al inicio
-    "/all-active",
+    "/all-active/",  # ✅ CAMBIO: Agregado /
     response_model=List[RolRead], # La respuesta es una lista de roles
     summary="Obtener todos los roles activos",
     description="Devuelve una lista de todos los roles que están actualmente activos, sin paginación. Ideal para listas desplegables. **Requiere rol 'Administrador'.**",
@@ -107,7 +107,7 @@ async def read_all_active_roles(
     Endpoint para obtener todos los roles activos.
     Requiere que el usuario tenga el rol 'Administrador'.
     """
-    logger.info("Accediendo a endpoint /roles/all-active")
+    logger.info("Accediendo a endpoint /roles/all-active/")
     try:
         # Llamar al método estático del servicio
         active_roles = await RolService.get_all_active_roles()
@@ -116,11 +116,11 @@ async def read_all_active_roles(
         return active_roles
     except ServiceError as e:
         # Captura errores específicos del servicio (ej. 500 por fallo en DB)
-        logger.error(f"Error de servicio en endpoint /roles/all-active: {e.detail}")
+        logger.error(f"Error de servicio en endpoint /roles/all-active/: {e.detail}")
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     except Exception as e:
         # Captura cualquier otro error inesperado
-        logger.exception(f"Error inesperado en endpoint /roles/all-active: {e}")
+        logger.exception(f"Error inesperado en endpoint /roles/all-active/: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocurrió un error interno al intentar obtener los roles activos."
@@ -128,7 +128,7 @@ async def read_all_active_roles(
 
 # --- Endpoint para Obtener un Rol por ID (SIN CAMBIOS) ---
 @router.get(
-    "/{rol_id}",
+    "/{rol_id}/",  # ✅ CAMBIO: Agregado /
     response_model=RolRead,
     summary="Obtener un rol por ID",
     description="Obtiene los detalles de un rol específico por su ID (activo o inactivo). **Requiere rol 'Administrador'.**",
@@ -157,7 +157,7 @@ async def read_rol(
 
 # --- Endpoint para Actualizar un Rol (SIN CAMBIOS) ---
 @router.put(
-    "/{rol_id}",
+    "/{rol_id}/",  # ✅ CAMBIO: Agregado /
     response_model=RolRead,
     summary="Actualizar un rol",
     description="Actualiza los datos de un rol existente. **Requiere rol 'Administrador'.**",
@@ -194,7 +194,7 @@ async def update_rol(
 
 # --- Endpoint para Desactivar un Rol (Borrado Lógico) (SIN CAMBIOS) ---
 @router.delete(
-    "/{rol_id}",
+    "/{rol_id}/",  # ✅ CAMBIO: Agregado /
     response_model=RolRead, # Devuelve el rol actualizado (inactivo)
     summary="Desactivar un rol",
     description="Marca un rol como inactivo (borrado lógico). **Requiere rol 'Administrador'.**",
@@ -220,7 +220,7 @@ async def deactivate_rol(
 
 # --- NUEVO Endpoint para Reactivar un Rol ---
 @router.post(
-    "/{rol_id}/reactivate", # Usamos POST para la acción específica
+    "/{rol_id}/reactivate/",  # ✅ CAMBIO: Agregado /
     response_model=RolRead, # Devuelve el rol actualizado (activo)
     status_code=status.HTTP_200_OK, # OK es apropiado para una acción exitosa
     summary="Reactivar un rol",
@@ -249,7 +249,7 @@ async def reactivate_rol(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al reactivar el rol.")
 
 @router.get(
-    "/{rol_id}/permisos",
+    "/{rol_id}/permisos/",  # ✅ CAMBIO: Agregado /
     response_model=List[PermisoRead],
     summary="Obtener Permisos de un Rol",
     description="Obtiene la lista de permisos de menú asignados a un rol específico. Requiere rol 'admin'.",
@@ -258,7 +258,7 @@ async def reactivate_rol(
 async def get_permisos_por_rol(
     rol_id: int = Path(..., title="ID del Rol", description="El ID del rol para consultar sus permisos")
 ):
-    logger.info(f"Solicitud recibida en GET /roles/{rol_id}/permisos")
+    logger.info(f"Solicitud recibida en GET /roles/{rol_id}/permisos/")
     try:
         # Llamada estática al servicio
         permisos = await RolService.obtener_permisos_por_rol(rol_id=rol_id)
@@ -280,7 +280,7 @@ async def get_permisos_por_rol(
         )
 
 @router.put(
-    "/{rol_id}/permisos",
+    "/{rol_id}/permisos/",  # ✅ CAMBIO: Agregado /
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Actualizar Permisos de un Rol",
     description="Sobrescribe TODOS los permisos de menú para un rol específico. Requiere rol 'admin'.",
@@ -290,7 +290,7 @@ async def update_permisos_rol(
     rol_id: int = Path(..., title="ID del Rol", description="El ID del rol cuyos permisos se actualizarán"),
     payload: PermisoUpdatePayload = Body(..., description="Objeto que contiene la lista completa de los nuevos permisos para el rol")
 ):
-    logger.info(f"Solicitud recibida en PUT /roles/{rol_id}/permisos")
+    logger.info(f"Solicitud recibida en PUT /roles/{rol_id}/permisos/")
     try:
         # Llamada estática al servicio
         await RolService.actualizar_permisos_rol(rol_id=rol_id, permisos_payload=payload)

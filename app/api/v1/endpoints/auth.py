@@ -1,97 +1,164 @@
-# app/api/v1/endpoints/auth.py (CORREGIDO PARA SWAGGER AUTH)
-
-from fastapi import APIRouter, HTTPException, status, Depends
-# --- IMPORTAR OAuth2PasswordRequestForm ---
+# app/api/v1/endpoints/auth.py
+from fastapi import APIRouter, HTTPException, status, Depends, Response, Request
 from fastapi.security import OAuth2PasswordRequestForm
-# Asegúrate que UserDataWithRoles espere 'roles: List[str]'
-# Ya no necesitas LoginData aquí para la entrada
-from app.schemas.auth import Token, UserDataWithRoles # Quitar LoginData si no se usa en otro lado
-from app.core.auth import authenticate_user, create_access_token
+
+from app.schemas.auth import Token, UserDataWithRoles
+from app.core.auth import (
+    authenticate_user,
+    create_access_token,
+    create_refresh_token,
+    get_current_user,
+    get_current_user_from_refresh,
+)
+from app.core.config import settings
 from app.core.logging_config import get_logger
-# --- IMPORTAR EL SERVICIO DE USUARIO ---
 from app.services.usuario_service import UsuarioService
 
 router = APIRouter()
 logger = get_logger(__name__)
 
-# --- FUNCIÓN PARA OBTENER EL SERVICIO (si usas Depends) ---
-# def get_usuario_service():
-#     yield UsuarioService()
-
 @router.post(
-    "/login",
-    response_model=Token, # Token debe contener UserDataWithRoles con roles: List[str]
+    "/login/",  # ✅ CAMBIO: Agregado /
+    response_model=Token,
     summary="Autenticar usuario y obtener token",
-    description="Verifica las credenciales del usuario, obtiene sus datos y nombres de roles, y genera un token JWT."
+    description="Verifica credenciales, genera access y refresh token (cookie HttpOnly) y retorna datos de usuario."
 )
 async def login(
-    # --- CAMBIAR login_data: LoginData POR form_data: OAuth2PasswordRequestForm ---
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    # usuario_service: UsuarioService = Depends(get_usuario_service) # Descomentar si usas Depends
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends()
 ):
-    """
-    Endpoint para autenticar usuarios, obtener sus datos (incluyendo nombres de roles)
-    y generar token JWT. Acepta credenciales como form data (username, password).
-    """
-    # --- Instanciar servicio si NO usas Depends ---
-    usuario_service = UsuarioService() # Comentar si usas Depends
-
+    usuario_service = UsuarioService()
     try:
-        # 1. Autenticar al usuario usando form_data
-        # --- USAR form_data.username y form_data.password ---
+        # 1) Autenticación
         user_base_data = await authenticate_user(form_data.username, form_data.password)
-        if not user_base_data:
-             logger.warning(f"authenticate_user devolvió None para el usuario {form_data.username}")
-             raise HTTPException(
-                 status_code=status.HTTP_401_UNAUTHORIZED,
-                 detail="Credenciales incorrectas o usuario no encontrado",
-                 headers={"WWW-Authenticate": "Bearer"},
-             )
 
-        # 2. Obtener el ID del usuario
+        # 2) Roles
         user_id = user_base_data.get('usuario_id')
-        if not user_id:
-            logger.error(f"Los datos base del usuario {form_data.username} no contienen 'usuario_id'. Datos: {user_base_data}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error interno: No se pudo obtener el ID del usuario autenticado."
-            )
+        user_role_names = await usuario_service.get_user_role_names(user_id=user_id)
 
-        # 3. Obtener los NOMBRES de roles del usuario usando el servicio
-        try:
-            user_role_names = await usuario_service.get_user_role_names(user_id=user_id)
-            logger.info(f"Nombres de roles obtenidos para usuario ID {user_id}: {user_role_names}")
-        except Exception as service_error:
-            logger.exception(f"Error al obtener nombres de roles para usuario ID {user_id} desde UsuarioService: {service_error}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error interno: No se pudieron obtener los roles del usuario."
-            )
-
-        # 4. Combinar datos base y nombres de roles
         user_full_data = {**user_base_data, "roles": user_role_names}
 
-        # 5. Crear el token JWT (usando form_data.username como 'sub')
-        access_token = create_access_token(
-            # --- USAR form_data.username ---
-            data={"sub": form_data.username}
-            # Si necesitas roles en el payload del token:
-            # data={"sub": form_data.username, "roles": user_role_names}
+        # 3) Tokens
+        access_token = create_access_token(data={"sub": form_data.username})
+        refresh_token = create_refresh_token(data={"sub": form_data.username})
+
+        # 4) Setear refresh en cookie HttpOnly con configuración dinámica según entorno
+        response.set_cookie(
+            key=settings.REFRESH_COOKIE_NAME,
+            value=refresh_token,
+            httponly=True,
+            secure=settings.COOKIE_SECURE,      # False en dev, True en prod
+            samesite=settings.COOKIE_SAMESITE,  # "none" en dev, "lax" en prod
+            max_age=settings.REFRESH_COOKIE_MAX_AGE,
+            path="/",
         )
 
-        # 6. Devolver la respuesta completa
+        logger.info(f"Usuario {form_data.username} autenticado exitosamente")
+
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "user_data": user_full_data # Validado por response_model
+            "user_data": user_full_data
         }
 
-    except HTTPException as http_exc:
-        raise http_exc
+    except HTTPException:
+        raise
     except Exception as e:
-        # --- USAR form_data.username en el log ---
-        logger.exception(f"Error inesperado en el endpoint /login para usuario {form_data.username}: {str(e)}")
+        logger.exception(f"Error inesperado en /login/ para usuario {form_data.username}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocurrió un error inesperado durante el proceso de login."
         )
+
+@router.get(
+    "/me/",  # ✅ CAMBIO: Agregado /
+    response_model=UserDataWithRoles,
+    summary="Obtener usuario actual",
+    description="Retorna datos del usuario autenticado, incluyendo roles. Requiere Access Token válido."
+)
+async def get_me(current_user: dict = Depends(get_current_user)):
+    try:
+        usuario_service = UsuarioService()
+        user_id = current_user.get('usuario_id')
+        user_role_names = await usuario_service.get_user_role_names(user_id=user_id)
+        user_full_data = {**current_user, "roles": user_role_names}
+        return user_full_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error en /me/: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error obteniendo datos del usuario"
+        )
+
+@router.post(
+    "/refresh/",  # ✅ CAMBIO: Agregado /
+    response_model=Token,
+    summary="Refrescar Access Token",
+    description="Genera un nuevo access token usando el refresh token en cookie HttpOnly. Rota el refresh."
+)
+async def refresh_access_token(
+    request: Request,  # ← AGREGAR ESTO
+    response: Response,
+    current_user: dict = Depends(get_current_user_from_refresh)
+):
+# ✅ AGREGAR ESTOS LOGS AL INICIO (ANTES DEL TRY)
+    cookies = request.cookies
+    logger.info(f"🍪 [REFRESH] Cookies recibidas: {list(cookies.keys())}")
+    logger.info(f"🍪 [REFRESH] refresh_token presente: {'refresh_token' in cookies}")
+    if 'refresh_token' in cookies:
+        token_preview = cookies['refresh_token'][:30] if len(cookies['refresh_token']) > 30 else cookies['refresh_token']
+        logger.info(f"🍪 [REFRESH] refresh_token value (primeros 30 chars): {token_preview}...")
+    else:
+        logger.warning(f"⚠️ [REFRESH] NO SE RECIBIÓ COOKIE refresh_token")
+    
+    logger.info(f"🔍 [REFRESH] Headers recibidos: {dict(request.headers)}")
+
+    try:
+        username = current_user.get("nombre_usuario")
+        if not username:
+            raise HTTPException(status_code=401, detail="Usuario no válido")
+
+        # Access
+        new_access_token = create_access_token(data={"sub": username})
+
+        # Rotar refresh con configuración dinámica según entorno
+        new_refresh_token = create_refresh_token(data={"sub": username})
+        response.set_cookie(
+            key=settings.REFRESH_COOKIE_NAME,
+            value=new_refresh_token,
+            httponly=True,
+            secure=settings.COOKIE_SECURE,      # False en dev, True en prod
+            samesite=settings.COOKIE_SAMESITE,  # "none" en dev, "lax" en prod
+            max_age=settings.REFRESH_COOKIE_MAX_AGE,
+            path="/",
+        )
+        logger.info(f"✅ [REFRESH] Token refrescado exitosamente para usuario: {username}")
+        return {
+            "access_token": new_access_token,
+            "token_type": "bearer",
+            "user_data": None  # opcionalmente podrías devolver datos de usuario
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error en /refresh/: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al refrescar el token"
+        )
+
+@router.post(
+    "/logout/",  # ✅ CAMBIO: Agregado /
+    summary="Cerrar sesión",
+    description="Elimina el refresh token de la cookie."
+)
+async def logout(response: Response):
+    response.delete_cookie(
+        key=settings.REFRESH_COOKIE_NAME,
+        path="/",
+        samesite=settings.COOKIE_SAMESITE  # Importante: usar mismo samesite para borrar correctamente
+    )
+    logger.info("Usuario cerró sesión exitosamente")
+    return {"message": "Sesión cerrada exitosamente"}

@@ -38,7 +38,7 @@ require_admin = RoleChecker(["Administrador"])
 
 # --- NUEVO ENDPOINT PARA LISTAR USUARIOS PAGINADOS ---
 @router.get(
-    "/",
+    "/",  # ✅ YA TIENE /
     response_model=PaginatedUsuarioResponse,
     summary="Listar usuarios paginados",
     description="Obtiene una lista paginada de usuarios activos con sus roles. Permite búsqueda. **Requiere rol 'admin'.**",
@@ -80,7 +80,7 @@ async def list_usuarios(
 
 # --- Endpoint para Crear Usuario ---
 @router.post(
-    "/",
+    "/",  # ✅ YA TIENE /
     response_model=UsuarioRead, # Mantenemos UsuarioRead aquí, la creación no suele devolver roles
     status_code=status.HTTP_201_CREATED,
     summary="Crear un nuevo usuario",
@@ -110,7 +110,7 @@ async def crear_usuario(
 
 # --- Endpoint para Obtener un Usuario por ID (con Roles) ---
 @router.get(
-    "/{usuario_id}",
+    "/{usuario_id}/",  # ✅ CAMBIO: Agregado /
     response_model=UsuarioReadWithRoles,
     summary="Obtener un usuario por ID",
     description="Obtiene los detalles de un usuario específico, incluyendo sus roles activos. **Requiere autenticación.**",
@@ -141,7 +141,7 @@ async def read_usuario(
 
 # --- Endpoint para Actualizar Usuario ---
 @router.put(
-    "/{usuario_id}",
+    "/{usuario_id}/",  # ✅ CAMBIO: Agregado /
     response_model=UsuarioRead, # Mantenemos UsuarioRead, la actualización no suele devolver roles
     summary="Actualizar un usuario",
     description="Actualiza los datos de un usuario existente. No modifica roles. **Requiere rol 'admin'.**",
@@ -174,7 +174,7 @@ async def actualizar_usuario(
 
 # --- Endpoint para Eliminar Usuario (Lógico) ---
 @router.delete(
-    "/{usuario_id}",
+    "/{usuario_id}/",  # ✅ CAMBIO: Agregado /
     response_model=dict,
     summary="Eliminar (lógicamente) un usuario",
     description="Marca un usuario como eliminado y lo desactiva. También desactiva sus asignaciones de roles. **Requiere rol 'admin'.**",
@@ -201,7 +201,7 @@ async def eliminar_usuario(
 # --- Endpoints para Gestión de Roles de Usuario ---
 
 @router.post(
-    "/{usuario_id}/roles/{rol_id}",
+    "/{usuario_id}/roles/{rol_id}/",  # ✅ CAMBIO: Agregado /
     response_model=UsuarioRolRead, # Schema para la relación usuario-rol
     status_code=status.HTTP_201_CREATED,
     summary="Asignar un rol a un usuario",
@@ -228,7 +228,7 @@ async def assign_rol_to_usuario(
 
 
 @router.delete(
-    "/{usuario_id}/roles/{rol_id}",
+    "/{usuario_id}/roles/{rol_id}/",  # ✅ CAMBIO: Agregado /
     response_model=UsuarioRolRead, # Schema para la relación usuario-rol
     summary="Revocar un rol de un usuario",
     description="Desactiva la asignación de un rol específico para un usuario. **Requiere rol 'admin'.**",
@@ -254,7 +254,7 @@ async def revoke_rol_from_usuario(
 
 
 @router.get(
-    "/{usuario_id}/roles",
+    "/{usuario_id}/roles/",  # ✅ CAMBIO: Agregado /
     response_model=List[RolRead],
     summary="Obtener los roles de un usuario",
     description="Devuelve una lista de todos los roles activos asignados a un usuario específico. **Requiere autenticación.**",
