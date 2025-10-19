@@ -247,7 +247,20 @@ SELECT_ALL_ROLES = "SELECT rol_id, nombre, descripcion, es_activo, fecha_creacio
 INSERT_ROL = "INSERT INTO dbo.rol (nombre, descripcion, es_activo) OUTPUT INSERTED.rol_id, INSERTED.nombre, INSERTED.descripcion, INSERTED.es_activo, INSERTED.fecha_creacion VALUES (?, ?, ?)"
 UPDATE_ROL = "UPDATE dbo.rol SET nombre = ?, descripcion = ?, es_activo = ? OUTPUT INSERTED.rol_id, INSERTED.nombre, INSERTED.descripcion, INSERTED.es_activo, INSERTED.fecha_creacion WHERE rol_id = ?"
 # Nota: DEACTIVATE_ROL podría ser un caso especial de UPDATE_ROL o una query separada
-DEACTIVATE_ROL = "UPDATE dbo.rol SET es_activo = 0 OUTPUT INSERTED.rol_id, INSERTED.nombre, INSERTED.es_activo WHERE rol_id = ? AND es_activo = 1"
+DEACTIVATE_ROL = """
+    UPDATE dbo.rol
+    SET
+        es_activo = 0
+    OUTPUT
+        INSERTED.rol_id,
+        INSERTED.nombre,
+        INSERTED.descripcion,
+        INSERTED.es_activo,
+        INSERTED.fecha_creacion
+    WHERE
+        rol_id = ?
+        AND es_activo = 1;  -- Solo desactivar si está activo
+"""
 REACTIVATE_ROL = """
     UPDATE dbo.rol
     SET

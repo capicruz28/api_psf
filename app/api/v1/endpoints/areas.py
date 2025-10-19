@@ -1,197 +1,499 @@
 # app/api/v1/endpoints/areas.py
+"""
+Módulo de endpoints para la gestión de áreas del sistema.
 
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Query # Añadir Query
-from typing import List, Dict, Any, Optional # Añadir Optional
+Este módulo proporciona una API REST completa para operaciones CRUD sobre áreas,
+incluyendo creación, lectura, actualización y desactivación de áreas de menú.
 
-# Importa los schemas necesarios, incluyendo el de paginación
-from app.schemas.area import AreaCreate, AreaUpdate, AreaRead, PaginatedAreaResponse
-from app.services.area_service import AreaService # Importa tu servicio actualizado
-from app.core.exceptions import ServiceError
-from app.api.deps import RoleChecker # Asumiendo que RoleChecker está en deps
+Características principales:
+- Autenticación JWT con requerimiento de rol 'Administrador'
+- Validación robusta de datos de entrada
+- Manejo consistente de errores con mensajes descriptivos
+- Paginación y búsqueda para listados
+- Operaciones de activación/desactivación (borrado lógico)
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
+from typing import List, Dict, Any, Optional
 import logging
-from app.schemas.area import AreaSimpleList
+
+# Schemas para áreas
+from app.schemas.area import AreaCreate, AreaUpdate, AreaRead, PaginatedAreaResponse, AreaSimpleList
+
+# Servicio de áreas con manejo de errores mejorado
+from app.services.area_service import AreaService
+
+# Sistema de excepciones personalizado
+from app.core.exceptions import CustomException  # Importar CustomException
+
+# Dependencias de autorización
+from app.api.deps import RoleChecker
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Dependencia para verificar rol de Administrador (se mantiene igual)
-ADMIN_ROLE_CHECK = Depends(RoleChecker(["Administrador"]))
+# --- CONFIGURACIÓN DE DEPENDENCIAS ---
+# Requiere rol de administrador para todas las operaciones
+require_admin = RoleChecker(["Administrador"])
 
-# --- Endpoint POST para Crear ---
+
+# --- ENDPOINTS DE GESTIÓN DE ÁREAS ---
+
 @router.post(
     "/",
     response_model=AreaRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Crear una nueva área (Admin)",
-    dependencies=[ADMIN_ROLE_CHECK]
+    summary="Crear una nueva área",
+    description="""
+    Crea una nueva área en el sistema con los datos proporcionados.
+    
+    **Permisos requeridos:** 
+    - Rol 'Administrador'
+    
+    **Validaciones:**
+    - Nombre único (no duplicado)
+    - Formato válido de nombre, descripción e icono
+    - Campos obligatorios: nombre
+    
+    **Respuestas:**
+    - 201: Área creada exitosamente
+    - 409: Conflicto - El nombre del área ya existe
+    - 422: Error de validación en los datos de entrada
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
 )
 async def crear_area_endpoint(area_in: AreaCreate = Body(...)):
-    """Crea una nueva área de menú."""
-    logger.info(f"Solicitud POST /areas recibida para crear área: {area_in.nombre}")
+    """
+    Endpoint para crear una nueva área de menú en el sistema.
+    
+    Args:
+        area_in: Datos validados del área a crear
+        
+    Returns:
+        AreaRead: Área creada con todos sus datos incluyendo ID generado
+        
+    Raises:
+        HTTPException: En caso de error de validación, conflicto o error interno
+    """
+    logger.info(f"Solicitud POST /areas/ recibida para crear área: '{area_in.nombre}'")
+    
     try:
-        # Llama al método en español del servicio
+        # Delegar la lógica de negocio al servicio
         created_area = await AreaService.crear_area(area_in)
+        
+        logger.info(f"Área '{created_area.nombre}' creada exitosamente con ID: {created_area.area_id}")
         return created_area
-    except ServiceError as se:
-        logger.warning(f"Error de servicio al crear área: {se.detail} (Status: {se.status_code})")
-        raise HTTPException(status_code=se.status_code, detail=se.detail)
+        
+    except CustomException as ce:  # Capturamos todas las excepciones personalizadas
+        # Log del error
+        if ce.status_code == status.HTTP_409_CONFLICT:
+            logger.warning(f"Conflicto al crear área '{area_in.nombre}': {ce.detail}")
+        else:
+            logger.error(f"Error de servicio al crear área: {ce.detail} (Código: {ce.internal_code})")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
     except Exception as e:
-        logger.exception("Error inesperado en endpoint POST /areas")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al crear área.")
+        # Error inesperado - log completo pero respuesta genérica al cliente
+        logger.exception("Error inesperado en endpoint POST /areas/")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al crear el área. Por favor, contacte al administrador."
+        )
 
-# --- Endpoint GET para Obtener Lista Paginada ---
+
 @router.get(
     "/",
-    # Cambia el response_model al schema de paginación
     response_model=PaginatedAreaResponse,
-    summary="Obtener lista paginada de áreas (Admin)",
-    description="Obtiene una lista de áreas con opción de paginación y búsqueda por nombre o descripción. Requiere rol 'Administrador'.",
-    dependencies=[ADMIN_ROLE_CHECK]
+    summary="Obtener lista paginada de áreas",
+    description="""
+    Recupera una lista paginada de áreas con capacidad de búsqueda y filtrado.
+    
+    **Permisos requeridos:**
+    - Rol 'Administrador'
+    
+    **Parámetros de consulta:**
+    - search: Término opcional para buscar en nombre o descripción
+    - skip: Número de registros a omitir (para paginación)
+    - limit: Número máximo de registros por página (1-100)
+    
+    **Respuestas:**
+    - 200: Lista paginada recuperada exitosamente
+    - 422: Parámetros de consulta inválidos
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
 )
 async def obtener_areas_paginadas_endpoint(
-    # Añade los parámetros de Query para paginación y búsqueda
-    search: Optional[str] = Query(None, description="Término de búsqueda para filtrar por nombre o descripción"),
-    skip: int = Query(0, ge=0, description="Número de registros a saltar (paginación)"),
-    limit: int = Query(10, ge=1, le=100, description="Número máximo de registros a devolver por página")
+    search: Optional[str] = Query(
+        None, 
+        description="Término de búsqueda para filtrar por nombre o descripción"
+    ),
+    skip: int = Query(
+        0, 
+        ge=0, 
+        description="Número de registros a saltar (offset para paginación)"
+    ),
+    limit: int = Query(
+        10, 
+        ge=1, 
+        le=100,
+        description="Número máximo de registros a devolver por página"
+    )
 ):
     """
-    Recupera una lista paginada de áreas.
-
-    - **search**: Filtra áreas cuyo nombre o descripción contengan el término.
-    - **skip**: Offset para la paginación.
-    - **limit**: Tamaño de la página.
+    Endpoint para obtener una lista paginada y filtrada de áreas.
+    
+    Args:
+        search: Término opcional para búsqueda textual
+        skip: Offset para paginación
+        limit: Límite de resultados por página
+        
+    Returns:
+        PaginatedAreaResponse: Respuesta paginada con áreas y metadatos
+        
+    Raises:
+        HTTPException: En caso de error en los parámetros o error interno
     """
-    logger.info(f"Solicitud GET /areas recibida (paginada): skip={skip}, limit={limit}, search='{search}'")
+    logger.info(
+        f"Solicitud GET /areas/ recibida - "
+        f"Paginación: skip={skip}, limit={limit}, "
+        f"Búsqueda: '{search}'"
+    )
+    
     try:
-        # Llama al método de paginación del servicio
-        paginated_response = await AreaService.obtener_areas_paginadas(skip=skip, limit=limit, search=search)
+        # Obtener datos paginados del servicio
+        paginated_response = await AreaService.obtener_areas_paginadas(
+            skip=skip, 
+            limit=limit, 
+            search=search
+        )
+        
+        logger.info(
+            f"Lista paginada de áreas recuperada - "
+            f"Total: {paginated_response.total_areas}, "
+            f"Página: {paginated_response.pagina_actual}"
+        )
         return paginated_response
-    except ServiceError as se:
-        logger.error(f"Error de servicio al obtener áreas paginadas: {se.detail}")
-        raise HTTPException(status_code=se.status_code, detail=se.detail)
+        
+    except CustomException as ce:  # Cambio de ServiceError a CustomException
+        logger.error(f"Error de servicio al obtener áreas paginadas: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
     except Exception as e:
-        logger.exception("Error inesperado en endpoint GET /areas (paginado)")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al obtener áreas.")
+        logger.exception("Error inesperado en endpoint GET /areas/ (paginado)")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al recuperar la lista de áreas."
+        )
+
 
 @router.get(
-    "/list/",  # ✅ CAMBIO: Agregado /
-    response_model=List[AreaSimpleList], # Devuelve una lista del nuevo schema simple
-    summary="Obtener lista simple de áreas activas (para selectores)",
-    description="Devuelve solo el ID y el nombre de todas las áreas activas. Ideal para poblar listas desplegables.",
-    # Podrías quitar la dependencia de Admin si cualquier usuario logueado puede ver las áreas
-    dependencies=[ADMIN_ROLE_CHECK]
+    "/list/",
+    response_model=List[AreaSimpleList],
+    summary="Obtener lista simple de áreas activas",
+    description="""
+    Devuelve una lista simplificada de áreas activas para uso en selectores o listas desplegables.
+    
+    **Permisos requeridos:**
+    - Rol 'Administrador'
+    
+    **Respuestas:**
+    - 200: Lista simple recuperada exitosamente
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
 )
 async def obtener_lista_simple_areas_endpoint():
-    """Obtiene una lista simplificada (ID, Nombre) de todas las áreas activas."""
-    logger.info("Solicitud GET /areas/list/ recibida.")
+    """
+    Endpoint para obtener una lista simplificada de áreas activas.
+    
+    Ideal para componentes UI que necesitan solo ID y nombre (selectores, combobox, etc.).
+    
+    Returns:
+        List[AreaSimpleList]: Lista de áreas activas con ID y nombre
+        
+    Raises:
+        HTTPException: En caso de error interno del servidor
+    """
+    logger.info("Solicitud GET /areas/list/ recibida para lista simple")
+    
     try:
-        # Necesitarás añadir un método al AreaService para esto
         areas_list = await AreaService.obtener_lista_simple_areas_activas()
+        
+        logger.info(f"Lista simple de áreas recuperada - Total: {len(areas_list)} áreas activas")
         return areas_list
-    except ServiceError as se:
-        logger.error(f"Error de servicio al obtener lista simple de áreas: {se.detail}")
-        raise HTTPException(status_code=se.status_code, detail=se.detail)
+        
+    except CustomException as ce:  # Cambio de ServiceError a CustomException
+        logger.error(f"Error de servicio al obtener lista simple de áreas: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
     except Exception as e:
         logger.exception("Error inesperado en endpoint GET /areas/list/")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al obtener la lista de áreas.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al obtener la lista simplificada de áreas."
+        )
 
-# --- Endpoint GET por ID ---
+
 @router.get(
-    "/{area_id}/",  # ✅ CAMBIO: Agregado /
+    "/{area_id}/",
     response_model=AreaRead,
-    summary="Obtener un área por ID (Admin)",
-    dependencies=[ADMIN_ROLE_CHECK]
+    summary="Obtener un área por ID",
+    description="""
+    Recupera los detalles completos de un área específica mediante su ID.
+    
+    **Permisos requeridos:**
+    - Rol 'Administrador'
+    
+    **Parámetros de ruta:**
+    - area_id: ID numérico del área a consultar
+    
+    **Respuestas:**
+    - 200: Área encontrada y devuelta
+    - 404: Área no encontrada
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
 )
 async def obtener_area_por_id_endpoint(area_id: int):
-    """Obtiene los detalles de un área específica por su ID."""
-    logger.debug(f"Solicitud GET /areas/{area_id}/ recibida.")
+    """
+    Endpoint para obtener los detalles completos de un área específica.
+    
+    Args:
+        area_id: Identificador único del área a consultar
+        
+    Returns:
+        AreaRead: Detalles completos del área solicitada
+        
+    Raises:
+        HTTPException: Si el área no existe o hay error interno
+    """
+    logger.debug(f"Solicitud GET /areas/{area_id}/ recibida")
+    
     try:
-        # Llama al método en español del servicio
         area = await AreaService.obtener_area_por_id(area_id)
+        
         if area is None:
-            logger.warning(f"Área con ID {area_id} no encontrada (servicio devolvió None).")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Área no encontrada")
+            logger.warning(f"Área con ID {area_id} no encontrada")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Área con ID {area_id} no encontrada."
+            )
+            
+        logger.debug(f"Área ID {area_id} encontrada: '{area.nombre}'")
         return area
-    # El servicio obtener_area_por_id ahora no lanza ServiceError directamente,
-    # pero lo mantenemos por si acaso o para otros errores inesperados.
-    except ServiceError as se:
-        logger.error(f"Error de servicio obteniendo área {area_id}: {se.detail}")
-        raise HTTPException(status_code=se.status_code, detail=se.detail)
+        
+    except CustomException as ce:  # Cambio de ServiceError a CustomException
+        logger.error(f"Error de servicio obteniendo área {area_id}: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
     except Exception as e:
         logger.exception(f"Error inesperado obteniendo área {area_id}: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al obtener área.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al recuperar el área solicitada."
+        )
 
-# --- Endpoint PUT para Actualizar ---
+
 @router.put(
-    "/{area_id}/",  # ✅ CAMBIO: Agregado /
+    "/{area_id}/",
     response_model=AreaRead,
-    summary="Actualizar un área existente (Admin)",
-    dependencies=[ADMIN_ROLE_CHECK]
+    summary="Actualizar un área existente",
+    description="""
+    Actualiza la información de un área existente mediante operación parcial (PATCH).
+    
+    **Permisos requeridos:**
+    - Rol 'Administrador'
+    
+    **Parámetros de ruta:**
+    - area_id: ID numérico del área a actualizar
+    
+    **Validaciones:**
+    - Al menos un campo debe ser proporcionado para actualizar
+    - Si se actualiza el nombre, debe mantenerse único
+    
+    **Respuestas:**
+    - 200: Área actualizada exitosamente
+    - 400: Cuerpo de solicitud vacío
+    - 404: Área no encontrada
+    - 409: Conflicto - Nuevo nombre ya existe
+    - 422: Error de validación en los datos
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
 )
-async def actualizar_area_endpoint(area_id: int, area_in: AreaUpdate = Body(...)):
-    """Actualiza la información de un área existente."""
-    logger.info(f"Solicitud PUT /areas/{area_id}/ recibida.")
-    # Pequeña validación para evitar cuerpos vacíos que el servicio también rechazaría
+async def actualizar_area_endpoint(
+    area_id: int, 
+    area_in: AreaUpdate = Body(...)
+):
+    """
+    Endpoint para actualizar parcialmente un área existente.
+    
+    Args:
+        area_id: Identificador único del área a actualizar
+        area_in: Campos a actualizar (actualización parcial)
+        
+    Returns:
+        AreaRead: Área actualizada con los nuevos datos
+        
+    Raises:
+        HTTPException: En caso de error de validación, no encontrado o conflicto
+    """
+    logger.info(f"Solicitud PUT /areas/{area_id}/ recibida para actualizar")
+    
+    # Validar que hay datos para actualizar
     update_data = area_in.model_dump(exclude_unset=True)
     if not update_data:
-         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El cuerpo de la solicitud no puede estar vacío para actualizar.")
+        logger.warning(f"Intento de actualizar área {area_id} sin datos")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Se debe proporcionar al menos un campo para actualizar el área."
+        )
+    
     try:
-        # Llama al método en español del servicio
+        # Delegar actualización al servicio
         updated_area = await AreaService.actualizar_area(area_id, area_in)
-        # El servicio ahora devuelve None si no se encuentra, manejado por la excepción 404 dentro del servicio
-        # if updated_area is None: # Esta verificación ya no es necesaria aquí si el servicio lanza 404
-        #     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Área no encontrada para actualizar")
+        
+        logger.info(f"Área ID {area_id} actualizada exitosamente: '{updated_area.nombre}'")
         return updated_area
-    except ServiceError as se:
-        logger.warning(f"Error de servicio al actualizar área {area_id}: {se.detail} (Status: {se.status_code})")
-        raise HTTPException(status_code=se.status_code, detail=se.detail)
+        
+    except CustomException as ce:  # Cambio de ServiceError a CustomException
+        logger.warning(f"Error de negocio al actualizar área {area_id}: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
     except Exception as e:
         logger.exception(f"Error inesperado en endpoint PUT /areas/{area_id}/")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al actualizar área.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al actualizar el área."
+        )
 
-# --- Endpoint DELETE para Desactivar ---
+
 @router.delete(
-    "/{area_id}/",  # ✅ CAMBIO: Agregado /
-    # Cambia el response_model a AreaRead, ya que el servicio devuelve el objeto actualizado
+    "/{area_id}/",
     response_model=AreaRead,
-    status_code=status.HTTP_200_OK, # 200 OK es apropiado para una actualización de estado
-    summary="Desactivar un área (Borrado Lógico) (Admin)",
-    dependencies=[ADMIN_ROLE_CHECK]
+    status_code=status.HTTP_200_OK,
+    summary="Desactivar un área (Borrado Lógico)",
+    description="""
+    Desactiva un área estableciendo su estado 'es_activo' a False (borrado lógico).
+    
+    **Permisos requeridos:**
+    - Rol 'Administrador'
+    
+    **Parámetros de ruta:**
+    - area_id: ID numérico del área a desactivar
+    
+    **Notas:**
+    - Operación reversible (usar endpoint de reactivación)
+    - No elimina físicamente el registro
+    
+    **Respuestas:**
+    - 200: Área desactivada exitosamente
+    - 404: Área no encontrada
+    - 400: Área ya está desactivada
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
 )
 async def desactivar_area_endpoint(area_id: int):
-    """Desactiva un área estableciendo 'es_activo' a False."""
-    logger.info(f"Solicitud DELETE /areas/{area_id}/ (desactivar) recibida.")
+    """
+    Endpoint para desactivar un área (borrado lógico).
+    
+    Args:
+        area_id: Identificador único del área a desactivar
+        
+    Returns:
+        AreaRead: Área desactivada con estado actualizado
+        
+    Raises:
+        HTTPException: Si el área no existe, ya está desactivada o hay error interno
+    """
+    logger.info(f"Solicitud DELETE /areas/{area_id}/ recibida (desactivar)")
+    
     try:
-        # Llama al método unificado del servicio pasando activar=False
+        # Usar el servicio unificado para cambiar estado
         deactivated_area = await AreaService.cambiar_estado_area(area_id, activar=False)
-        # El servicio lanza excepciones 404 o 400 si no se puede desactivar
-        return deactivated_area # Devuelve el objeto AreaRead completo
-    except ServiceError as se:
-        logger.warning(f"No se pudo desactivar área {area_id}: {se.detail} (Status: {se.status_code})")
-        raise HTTPException(status_code=se.status_code, detail=se.detail)
+        
+        logger.info(f"Área ID {area_id} desactivada exitosamente")
+        return deactivated_area
+        
+    except CustomException as ce:  # Cambio de ServiceError a CustomException
+        logger.warning(f"No se pudo desactivar área {area_id}: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
     except Exception as e:
         logger.exception(f"Error inesperado en endpoint DELETE /areas/{area_id}/")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al desactivar área.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al desactivar el área."
+        )
 
-# --- Endpoint PUT para Reactivar ---
+
 @router.put(
-    "/{area_id}/reactivate/",  # ✅ CAMBIO: Agregado /
-    # Cambia el response_model a AreaRead
+    "/{area_id}/reactivate/",
     response_model=AreaRead,
-    summary="Reactivar un área desactivada (Admin)",
-    dependencies=[ADMIN_ROLE_CHECK]
+    summary="Reactivar un área desactivada",
+    description="""
+    Reactiva un área previamente desactivada estableciendo 'es_activo' a True.
+    
+    **Permisos requeridos:**
+    - Rol 'Administrador'
+    
+    **Parámetros de ruta:**
+    - area_id: ID numérico del área a reactivar
+    
+    **Respuestas:**
+    - 200: Área reactivada exitosamente
+    - 404: Área no encontrada
+    - 400: Área ya está activa
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
 )
 async def reactivar_area_endpoint(area_id: int):
-    """Reactiva un área estableciendo 'es_activo' a True."""
-    logger.info(f"Solicitud PUT /areas/{area_id}/reactivate/ recibida.")
+    """
+    Endpoint para reactivar un área previamente desactivada.
+    
+    Args:
+        area_id: Identificador único del área a reactivar
+        
+    Returns:
+        AreaRead: Área reactivada con estado actualizado
+        
+    Raises:
+        HTTPException: Si el área no existe, ya está activa o hay error interno
+    """
+    logger.info(f"Solicitud PUT /areas/{area_id}/reactivate/ recibida")
+    
     try:
-        # Llama al método unificado del servicio pasando activar=True
+        # Usar el servicio unificado para cambiar estado
         reactivated_area = await AreaService.cambiar_estado_area(area_id, activar=True)
-        # El servicio lanza excepciones 404 o 400 si no se puede reactivar
-        return reactivated_area # Devuelve el objeto AreaRead completo
-    except ServiceError as se:
-        logger.warning(f"No se pudo reactivar área {area_id}: {se.detail} (Status: {se.status_code})")
-        raise HTTPException(status_code=se.status_code, detail=se.detail)
+        
+        logger.info(f"Área ID {area_id} reactivada exitosamente")
+        return reactivated_area
+        
+    except CustomException as ce:  # Cambio de ServiceError a CustomException
+        logger.warning(f"No se pudo reactivar área {area_id}: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
     except Exception as e:
         logger.exception(f"Error inesperado en endpoint PUT /areas/{area_id}/reactivate/")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al reactivar área.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al reactivar el área."
+        )
