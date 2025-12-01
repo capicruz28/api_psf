@@ -52,7 +52,7 @@ def get_db_connection(connection_type: DatabaseConnection = DatabaseConnection.D
 
     except pyodbc.Error as e:
         logger.error(f"Error de conexión a la base de datos ({connection_type.value}): {str(e)}")
-        raise DatabaseError(status_code=500, detail=f"Error de conexión: {str(e)}")
+        raise DatabaseError(detail=f"Error de conexión: {str(e)}")
 
     finally:
         if conn:
