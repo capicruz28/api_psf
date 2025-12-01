@@ -73,7 +73,7 @@ async def authenticate_user(username: str, password: str) -> Dict:
     try:
         query = """
             SELECT usuario_id, nombre_usuario, correo, contrasena,
-                   nombre, apellido, es_activo
+                   nombre, apellido, es_activo, codigo_trabajador_externo
             FROM usuario
             WHERE nombre_usuario = ? AND es_eliminado = 0
         """
@@ -143,7 +143,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict:
         raise credentials_exception
 
     query = """
-        SELECT usuario_id, nombre_usuario, correo, nombre, apellido, es_activo
+        SELECT usuario_id, nombre_usuario, correo, nombre, apellido, es_activo, codigo_trabajador_externo
         FROM usuario
         WHERE nombre_usuario = ? AND es_eliminado = 0
     """
@@ -186,7 +186,7 @@ async def get_current_user_from_refresh(
         username = token_data.sub
 
         query = """
-            SELECT usuario_id, nombre_usuario, correo, nombre, apellido, es_activo
+            SELECT usuario_id, nombre_usuario, correo, nombre, apellido, es_activo, codigo_trabajador_externo
             FROM usuario
             WHERE nombre_usuario = ? AND es_eliminado = 0
         """

@@ -204,7 +204,9 @@ WITH UserRoles AS (
         u.correo_confirmado,
         u.fecha_creacion,
         u.fecha_ultimo_acceso,
-        u.fecha_actualizacion,
+        u.fecha_actualizacion,        
+        u.origen_datos, 
+        u.codigo_trabajador_externo,
         r.rol_id,
         r.nombre AS nombre_rol
         -- Añade aquí otros campos de 'usuario' o 'rol' que necesites
@@ -502,4 +504,57 @@ GET_MAX_ORDEN_FOR_ROOT = """
     SELECT MAX(orden) as max_orden
     FROM menu
     WHERE area_id = ? AND padre_menu_id IS NULL;
+"""
+
+# 💡 [NUEVO] QUERIES ESPECÍFICAS PARA MANTENIMIENTO DE USUARIO
+# Agregamos esta query que se usa para obtener UN usuario por ID sin roles.
+SELECT_USUARIO_BY_ID = """
+    SELECT
+        usuario_id, nombre_usuario, correo, contrasena, nombre, apellido, 
+        es_activo, correo_confirmado, fecha_creacion, fecha_ultimo_acceso, 
+        fecha_actualizacion, es_eliminado,
+        origen_datos, codigo_trabajador_externo
+    FROM
+        usuario
+    WHERE
+        usuario_id = ? AND es_eliminado = 0;
+"""
+
+# Agregamos esta query para el INSERT de un nuevo usuario, incluyendo los campos de sincronización.
+CREATE_USUARIO_QUERY = """
+    INSERT INTO usuario (
+        nombre_usuario, correo, contrasena, nombre, apellido, 
+        es_activo, correo_confirmado, 
+        origen_datos, codigo_trabajador_externo
+    )
+    OUTPUT INSERTED.usuario_id
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ? 
+    ); 
+"""
+
+# 💡 [NUEVO] QUERY PARA ACTUALIZAR PERFIL DESDE SINCRONIZACIÓN EXTERNA (BD LOCAL)
+UPDATE_USUARIO_PERFIL_EXTERNO_QUERY = """    
+    UPDATE usuario SET
+        nombre = ?,
+        apellido = ?,
+        fecha_actualizacion = GETDATE()
+    OUTPUT 
+        INSERTED.usuario_id, INSERTED.nombre, INSERTED.apellido, INSERTED.fecha_actualizacion
+    WHERE
+        usuario_id = ?
+    AND
+        origen_datos = 'externo';     
+"""
+
+# ⚠️ [NUEVO] QUERY CONCEPTUAL PARA DB EXTERNA DEL CLIENTE
+# Esta query DEBE ser ejecutada usando la conexión dinámica del cliente.
+SELECT_PERFIL_EXTERNO_QUERY = """
+    SELECT 
+        rtrim(dnombr) AS nombre, 
+        rtrim(dappat)+' '+rtrim(dapmat) AS apellido,
+        nlbele as dni_trabajador
+    FROM 
+        mtraba00 
+    WHERE 
+        ctraba = ?;
 """

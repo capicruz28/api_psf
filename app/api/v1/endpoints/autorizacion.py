@@ -31,12 +31,12 @@ router = APIRouter()
 require_admin = RoleChecker(["Administrador"])
 
 @router.get(
-    "/pendientes/",  # ✅ CAMBIO: Agregado /
+    "/pendientes/{codigo_trabajador_externo}/",  # ✅ CAMBIO: Agregado /
     response_model=List[PendienteAutorizacionRead],
     summary="Obtener procesos pendientes de autorización",
     description="Ejecuta el SP sp_pendiente_autorizacion y devuelve todos los registros pendientes. **Requiere rol 'Administrador'.**"
 )
-async def obtener_pendientes_autorizacion():
+async def obtener_pendientes_autorizacion(codigo_trabajador_externo: str):
     """
     Obtiene todos los registros pendientes de autorización ejecutando el SP sp_pendiente_autorizacion.
     
@@ -46,7 +46,7 @@ async def obtener_pendientes_autorizacion():
     """
     try:
         logger.debug("Endpoint obtener_pendientes_autorizacion llamado")
-        pendientes = await AutorizacionService.get_pendientes_autorizacion()
+        pendientes = await AutorizacionService.get_pendientes_autorizacion(codigo_trabajador_externo)
         
         # Los datos ya vienen como lista de diccionarios desde el service
         # FastAPI + Pydantic se encargan de validar contra PendienteAutorizacionRead
@@ -227,7 +227,8 @@ async def obtener_reporte_autorizacion(params: ReporteAutorizacionParams):
         logger.debug(f"Endpoint obtener_reporte_autorizacion llamado")
         reporte = await AutorizacionService.get_reporte_autorizacion(
             fecha_inicio=params.fecha_inicio.isoformat(),
-            fecha_fin=params.fecha_fin.isoformat()
+            fecha_fin=params.fecha_fin.isoformat(),
+            codigo_trabajador_externo=params.codigo_trabajador_externo
         )
         return reporte
     except ValidationError as e:

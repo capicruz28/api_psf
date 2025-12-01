@@ -36,7 +36,7 @@ class AutorizacionService(BaseService):
 
     @staticmethod
     @BaseService.handle_service_errors
-    async def get_pendientes_autorizacion() -> List[Dict]:
+    async def get_pendientes_autorizacion(codigo_trabajador_externo: str) -> List[Dict]:
         """
         Ejecuta el SP sp_pendiente_autorizacion y retorna la lista de registros pendientes.
         
@@ -52,8 +52,8 @@ class AutorizacionService(BaseService):
         logger.info("Ejecutando SP sp_pendiente_autorizacion para obtener pendientes")
         
         try:
-            query = "EXEC dbo.sp_pendiente_autorizacion"
-            results = execute_query(query, ())
+            query = "EXEC dbo.sp_pendiente_autorizacion ?"
+            results = execute_query(query, (codigo_trabajador_externo))
             
             if not results:
                 logger.info("No se encontraron registros pendientes de autorización")
@@ -468,7 +468,7 @@ class AutorizacionService(BaseService):
         
     @staticmethod
     @BaseService.handle_service_errors
-    async def get_reporte_autorizacion(fecha_inicio: str, fecha_fin: str) -> List[Dict]:
+    async def get_reporte_autorizacion(fecha_inicio: str, fecha_fin: str, codigo_trabajador_externo: str) -> List[Dict]:
         """
         Ejecuta el SP sp_reporte_autorizacion_destajo con parámetros de rango de fechas.
         
@@ -500,7 +500,8 @@ class AutorizacionService(BaseService):
             # 🗄️ EJECUTAR STORED PROCEDURE CON PARÁMETROS
             params = {
                 "fecha_inicio": fecha_inicio_solo_fecha,
-                "fecha_fin": fecha_fin_solo_fecha
+                "fecha_fin": fecha_fin_solo_fecha,
+                "codigo_trabajador_externo": codigo_trabajador_externo
             }
 
             results = await asyncio.to_thread(

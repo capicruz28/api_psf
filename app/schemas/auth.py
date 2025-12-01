@@ -36,7 +36,7 @@ class UserDataBase(BaseModel):
         examples=["juan_perez", "maria.garcia"]
     )
     
-    correo: EmailStr = Field(
+    correo: Optional[EmailStr] = Field(
         ...,
         description="Dirección de correo electrónico válida del usuario",
         examples=["usuario@empresa.com", "nombre.apellido@dominio.org"]
@@ -58,6 +58,12 @@ class UserDataBase(BaseModel):
         ...,
         description="Indica si el usuario está activo en el sistema",
         examples=[True, False]
+    )
+
+    codigo_trabajador_externo: Optional[str] = Field(
+        None, 
+        max_length=25, 
+        description="Código de trabajador del sistema externo para sincronización de perfil."
     )
 
     @field_validator('nombre_usuario')

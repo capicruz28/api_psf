@@ -36,7 +36,7 @@ class UsuarioBase(BaseModel):
         examples=["juan_perez", "maria.garcia"]
     )
     
-    correo: str = Field(
+    correo: Optional[str] = Field(
         ...,
         description="Dirección de correo electrónico válida",
         examples=["usuario@empresa.com", "nombre.apellido@dominio.org"]
@@ -60,6 +60,20 @@ class UsuarioBase(BaseModel):
         True,
         description="Indica si el usuario está activo en el sistema"
     )
+
+    # 💡 [NUEVO] CAMPOS DE SINCRONIZACIÓN
+    origen_datos: str = Field(
+        'local',
+        max_length=10, 
+        description="Origen de los datos de perfil: 'local', 'externo', etc. Default 'local'."
+    )
+    
+    codigo_trabajador_externo: Optional[str] = Field(
+        None, 
+        max_length=25, 
+        description="Código de trabajador del sistema externo para sincronización de perfil."
+    )
+    # ------------------------------------
 
     @field_validator('nombre_usuario')
     @classmethod
@@ -98,52 +112,45 @@ class UsuarioBase(BaseModel):
             )
         
         # Validar que no sea solo números
-        if valor.isdigit():
-            raise ValueError(
-                'El nombre de usuario no puede contener solo números. '
-                'Debe incluir al menos una letra.'
-            )
+        
+        #if valor.isdigit():
+        #    raise ValueError(
+        #        'El nombre de usuario no puede contener solo números. '
+        #        'Debe incluir al menos una letra.'
+        #    )
         
         # Convertir a minúsculas para consistencia
         return valor.lower()
 
     @field_validator('correo')
     @classmethod
-    def validar_formato_correo(cls, valor: str) -> str:
+    def validar_formato_correo(cls, valor: Optional[str]) -> Optional[str]:
         """
-        Valida el formato del correo electrónico con regex específico.
-        
-        Esta validación es más estricta que la simple validación de EmailStr
-        para garantizar direcciones de correo profesionales válidas.
-        
-        Args:
-            valor: La dirección de correo a validar
-            
-        Returns:
-            str: Correo electrónico validado y normalizado
-            
-        Raises:
-            ValueError: Cuando el formato del correo no es válido
+        Valida el formato del correo electrónico solo si se proporcionó un valor.
+        Si es None o cadena vacía, lo acepta y devuelve None.
         """
-        if not valor:
-            raise ValueError('La dirección de correo electrónico no puede estar vacía')
-        
-        valor = valor.strip().lower()
-        
+        if valor is None:
+            return None
+
+        valor = valor.strip()
+        if valor == "":
+            return None
+
+        valor = valor.lower()
+
         # Patrón regex para validación estricta de email
         patron_email = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        
         if not re.match(patron_email, valor):
             raise ValueError(
                 'La dirección de correo electrónico no tiene un formato válido. '
                 'Ejemplo de formato correcto: usuario@dominio.com'
             )
-        
+
         # Validación adicional: dominio no puede empezar o terminar con guión
         dominio = valor.split('@')[1]
         if dominio.startswith('-') or dominio.endswith('-'):
             raise ValueError('El dominio del correo electrónico no puede empezar ni terminar con guión')
-        
+
         return valor
 
     @field_validator('nombre', 'apellido')
@@ -276,10 +283,16 @@ class UsuarioCreate(UsuarioBase):
         requieran verificar múltiples campos simultáneamente.
         """
         # Ejemplo: Validar que nombre de usuario no sea igual al correo
-        if (hasattr(self, 'nombre_usuario') and hasattr(self, 'correo') and
-            self.nombre_usuario == self.correo.split('@')[0]):
-            # Esto no es un error, pero podría ser una advertencia
-            pass
+        if (
+            hasattr(self, 'nombre_usuario')
+            and hasattr(self, 'correo')
+            and self.correo  # Verifica que no sea None ni cadena vacía
+            and isinstance(self.correo, str)
+        ):
+            correo_base = self.correo.split('@')[0]
+            if self.nombre_usuario == correo_base:
+                # Esto no es un error, pero puedes lanzar una advertencia o validación
+                pass
             
         return self
 
@@ -324,6 +337,40 @@ class UsuarioUpdate(BaseModel):
     _validar_nombre_usuario = field_validator('nombre_usuario')(UsuarioBase.validar_formato_nombre_usuario.__func__)
     _validar_correo = field_validator('correo')(UsuarioBase.validar_formato_correo.__func__)
     _validar_nombre_apellido = field_validator('nombre', 'apellido')(UsuarioBase.validar_nombre_apellido.__func__)
+
+class UsuarioSyncUpdate(BaseModel):
+    """
+    Schema de entrada para la sincronización de perfil por API.
+    Solo permite los campos que son actualizados por la query de sincronización externa.
+    (Generalmente: nombre y apellido).
+    """
+    nombre: Optional[str] = Field(
+        None,
+        max_length=50,
+    description="Nuevo nombre a sincronizar (opcional)"
+    )
+    
+    apellido: Optional[str] = Field(
+        None,
+        max_length=50, 
+        description="Nuevo apellido a sincronizar (opcional)"
+    )
+
+    dni_trabajador: Optional[str] = Field(
+        None,
+        max_length=50, 
+        description="Nuevo DNI a sincronizar (opcional)"
+    )
+    
+    # Reutilizar validador de nombre/apellido de UsuarioBase
+    _validar_nombre_apellido = field_validator('nombre', 'apellido')(UsuarioBase.validar_nombre_apellido.__func__)
+
+    # Puedes añadir un validador que fuerce al menos un campo a estar presente
+    @model_validator(mode='after')
+    def validar_al_menos_un_campo(self) -> 'UsuarioSyncUpdate':
+        if self.nombre is None and self.apellido is None:
+            raise ValueError("Al menos el 'nombre' o el 'apellido' deben ser proporcionados para la sincronización.")
+        return self
 
 class UsuarioRead(UsuarioBase):
     """

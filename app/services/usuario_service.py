@@ -153,8 +153,9 @@ class UsuarioService(BaseService):
 
     @staticmethod
     @BaseService.handle_service_errors
-    async def verificar_usuario_existente(nombre_usuario: str, correo: str) -> bool:
-        """
+    async def verificar_usuario_existente(nombre_usuario: str) -> bool:
+        #, correo: str
+        """        
         Verifica si ya existe un usuario con el mismo nombre de usuario o correo.
         
         🛡️ PREVENCIÓN DE DUPLICADOS:
@@ -174,12 +175,14 @@ class UsuarioService(BaseService):
         """
         try:
             query = """
-            SELECT nombre_usuario, correo
+            SELECT nombre_usuario
             FROM dbo.usuario
-            WHERE (LOWER(nombre_usuario) = LOWER(?) OR LOWER(correo) = LOWER(?))
+            WHERE (LOWER(nombre_usuario) = LOWER(?))
             """
-            
-            params = (nombre_usuario.lower(), correo.lower())
+            #, correo
+            #OR LOWER(correo) = LOWER(?)
+            params = (nombre_usuario.lower())
+            #, correo.lower()
             resultados = execute_query(query, params)
 
             if resultados:
@@ -188,21 +191,21 @@ class UsuarioService(BaseService):
                     r['nombre_usuario'].lower() == nombre_usuario.lower() 
                     for r in resultados
                 )
-                correo_coincide = any(
-                    r['correo'].lower() == correo.lower() 
-                    for r in resultados
-                )
+                #correo_coincide = any(
+                #    r['correo'].lower() == correo.lower() 
+                #    for r in resultados
+                #)
 
                 if nombre_usuario_coincide:
                     raise ConflictError(
                         detail="El nombre de usuario ya está en uso.",
                         internal_code="USERNAME_CONFLICT"
                     )
-                if correo_coincide:
-                    raise ConflictError(
-                        detail="El correo electrónico ya está registrado.",
-                        internal_code="EMAIL_CONFLICT"
-                    )
+                #if correo_coincide:
+                #    raise ConflictError(
+                #        detail="El correo electrónico ya está registrado.",
+                #        internal_code="EMAIL_CONFLICT"
+                #    )
 
             return False
             
@@ -249,10 +252,9 @@ class UsuarioService(BaseService):
         try:
             # 🚫 VALIDAR DUPLICADOS
             await UsuarioService.verificar_usuario_existente(
-                usuario_data['nombre_usuario'],
-                usuario_data['correo']
+                usuario_data['nombre_usuario']                
             )
-
+            #usuario_data['correo']    
             # 🔐 APLICAR HASH SEGURO A CONTRASEÑA
             hashed_password = get_password_hash(usuario_data['contrasena'])
 
@@ -260,13 +262,15 @@ class UsuarioService(BaseService):
             insert_query = """
             INSERT INTO dbo.usuario (
                 nombre_usuario, correo, contrasena, nombre, apellido,
-                es_activo, correo_confirmado, es_eliminado
+                es_activo, correo_confirmado, es_eliminado,
+                origen_datos, codigo_trabajador_externo
             )
             OUTPUT
                 INSERTED.usuario_id, INSERTED.nombre_usuario, INSERTED.correo,
                 INSERTED.nombre, INSERTED.apellido, INSERTED.es_activo,
-                INSERTED.correo_confirmado, INSERTED.fecha_creacion
-            VALUES (?, ?, ?, ?, ?, 1, 0, 0)
+                INSERTED.correo_confirmado, INSERTED.fecha_creacion,
+                INSERTED.origen_datos, INSERTED.codigo_trabajador_externo
+            VALUES (?, ?, ?, ?, ?, 1, 0, 0, ?, ?)
             """
             
             params = (
@@ -274,7 +278,9 @@ class UsuarioService(BaseService):
                 usuario_data['correo'],
                 hashed_password,
                 usuario_data.get('nombre'),
-                usuario_data.get('apellido')
+                usuario_data.get('apellido'),
+                usuario_data.get('origen_datos', 'local'), 
+                usuario_data.get('codigo_trabajador_externo').strip() if usuario_data.get('codigo_trabajador_externo') else None
             )
             
             result = execute_insert(insert_query, params)
@@ -344,19 +350,22 @@ class UsuarioService(BaseService):
             check_duplicates = False
             if 'nombre_usuario' in usuario_data and usuario_data['nombre_usuario'] != usuario_existente.get('nombre_usuario'):
                 check_duplicates = True
-            if 'correo' in usuario_data and usuario_data['correo'] != usuario_existente.get('correo'):
-                check_duplicates = True
+            #if 'correo' in usuario_data and usuario_data['correo'] != usuario_existente.get('correo'):
+            #    check_duplicates = True
 
             if check_duplicates:
                 verify_query = """
-                SELECT usuario_id, nombre_usuario, correo
+                SELECT usuario_id, nombre_usuario
                 FROM dbo.usuario
-                WHERE (nombre_usuario = ? OR correo = ?)
+                WHERE (nombre_usuario = ?)
                 AND usuario_id != ? AND es_eliminado = 0
                 """
+                #, correo
+                #OR correo = ?
                 check_nombre_usuario = usuario_data.get('nombre_usuario', usuario_existente.get('nombre_usuario'))
-                check_correo = usuario_data.get('correo', usuario_existente.get('correo'))
-                params_verify = (check_nombre_usuario, check_correo, usuario_id)
+                #check_correo = usuario_data.get('correo', usuario_existente.get('correo'))
+                params_verify = (check_nombre_usuario, usuario_id)
+                #, check_correo
                 duplicados = execute_query(verify_query, params_verify)
 
                 if duplicados:
@@ -365,11 +374,11 @@ class UsuarioService(BaseService):
                              detail=f"El nombre de usuario '{check_nombre_usuario}' ya está en uso.",
                              internal_code="USERNAME_CONFLICT"
                          )
-                    if any(d['correo'] == check_correo for d in duplicados):
-                         raise ConflictError(
-                             detail=f"El correo '{check_correo}' ya está en uso.",
-                             internal_code="EMAIL_CONFLICT"
-                         )
+                    #if any(d['correo'] == check_correo for d in duplicados):
+                    #     raise ConflictError(
+                    #         detail=f"El correo '{check_correo}' ya está en uso.",
+                    #         internal_code="EMAIL_CONFLICT"
+                    #     )
 
             # 🛠️ CONSTRUIR ACTUALIZACIÓN DINÁMICA
             update_parts = []

@@ -30,7 +30,7 @@ class PendienteAutorizacionRead(BaseModel):
     hora_inicio: Optional[datetime] = Field(None, description="Hora de inicio")
     hora_fin: Optional[datetime] = Field(None, description="Hora de fin")
     cod_trabajador: str = Field(..., description="Código del trabajador")
-    trabajador: str = Field(..., description="Nombre completo del trabajador")
+    trabajador: Optional[str] = Field(..., description="Nombre completo del trabajador")
     horas: float = Field(..., description="Horas trabajadas")
     kilos: float = Field(..., description="Kilos procesados")
     tarifa: float = Field(..., description="Tarifa por hora/kilo")
@@ -110,3 +110,4 @@ class ReporteAutorizacionParams(BaseModel):
     """Parámetros para el SP sp_reporte_autorizacion_destajo"""
     fecha_inicio: datetime = Field(..., description="Fecha de inicio del rango")
     fecha_fin: datetime = Field(..., description="Fecha de fin del rango")
+    codigo_trabajador_externo: Optional[str] = Field(..., description="Codigo del trabajador externo (supervisor)")

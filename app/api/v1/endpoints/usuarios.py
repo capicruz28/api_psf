@@ -33,6 +33,7 @@ from app.schemas.usuario_rol import UsuarioRolRead
 
 # Importar Servicios
 from app.services.usuario_service import UsuarioService
+from app.services.sync_service import SyncService
 
 # Importar Excepciones personalizadas - CORREGIDO
 from app.core.exceptions import CustomException
@@ -560,4 +561,112 @@ async def read_usuario_roles(usuario_id: int):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor al obtener los roles del usuario."
+        )
+
+# [ENDPOINT CORRECTO] - Consulta sin crear usuario
+@router.get(
+    "/consultar-perfil-externo/{codigo_trabajador}/",
+    response_model=dict,
+    summary="Consultar perfil externo sin crear usuario",
+    description="""
+    Consulta el nombre y apellido de un trabajador en el sistema externo
+    usando su código de trabajador. NO crea ningún usuario, solo retorna
+    los datos para pre-llenar el formulario.
+    
+    **Permisos requeridos:**
+    - Rol 'Administrador'
+    
+    **Parámetros de ruta:**
+    - codigo_trabajador: Código del trabajador en el sistema externo
+    
+    **Flujo de uso:**
+    1. Frontend muestra formulario de creación de usuario
+    2. Usuario selecciona origen_datos = 'externo'
+    3. Usuario ingresa código de trabajador
+    4. Frontend llama a este endpoint
+    5. Endpoint retorna nombre y apellido
+    6. Frontend pre-llena los campos del formulario
+    7. Usuario revisa y hace clic en "Guardar"
+    8. Frontend llama a POST /usuarios/ con todos los datos
+    
+    **Respuestas:**
+    - 200: Datos encontrados y retornados
+    - 404: Trabajador no encontrado en sistema externo
+    - 503: Error al conectar con sistema externo
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
+)
+async def consultar_perfil_externo(codigo_trabajador: str):
+    """
+    Endpoint para consultar perfil externo sin crear usuario.
+    Usado para pre-llenar formularios en el frontend.
+    
+    Args:
+        codigo_trabajador: Código del trabajador en sistema externo
+        
+    Returns:
+        dict: Nombre y apellido del trabajador
+        
+    Raises:
+        HTTPException: Si no se encuentra o hay error de conexión
+    """
+    logger.info(f"Solicitud GET /usuarios/consultar-perfil-externo/{codigo_trabajador}/ recibida")
+    
+    # Validar formato básico del código
+    if not codigo_trabajador or codigo_trabajador.strip() == '':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El código de trabajador no puede estar vacío"
+        )
+    
+    codigo_trabajador = codigo_trabajador.strip()
+    
+    try:
+        # 🔍 Consultar BD externa
+        perfil = await SyncService.obtener_perfil_externo(codigo_trabajador)
+        
+        if not perfil:
+            logger.warning(f"Trabajador con código {codigo_trabajador} no encontrado en sistema externo")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No se encontró un trabajador con el código '{codigo_trabajador}' en el sistema externo"
+            )
+        
+        # ✅ Validar que tenga al menos nombre o apellido
+        nombre = perfil.get('nombre', '').strip()
+        apellido = perfil.get('apellido', '').strip()
+        dni_trabajador = perfil.get('dni_trabajador', '').strip()
+        
+        if not nombre and not apellido:
+            logger.error(f"Perfil externo para código {codigo_trabajador} no contiene nombre ni apellido")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="El perfil encontrado no contiene información de nombre o apellido válida"
+            )
+        
+        logger.info(f"Perfil externo encontrado: {nombre} {apellido}")
+        
+        return {
+            "codigo_trabajador": codigo_trabajador,
+            "nombre": nombre,
+            "apellido": apellido,
+            "dni_trabajador": dni_trabajador,
+            "mensaje": "Perfil encontrado en sistema externo"
+        }
+        
+    except HTTPException:
+        # Re-lanzar HTTPExceptions ya manejadas
+        raise
+    except CustomException as ce:
+        logger.warning(f"Error al consultar perfil externo: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code,
+            detail=ce.detail
+        )
+    except Exception as e:
+        logger.exception(f"Error inesperado consultando perfil externo")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al consultar el sistema externo"
         )
