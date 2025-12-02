@@ -6,7 +6,7 @@ import logging
 # 🗄️ IMPORTACIONES DE BASE DE DATOS - Mantener compatibilidad con queries existentes
 from app.db.queries import (
     execute_query, execute_insert, execute_update,
-    GET_AREAS_PAGINATED_QUERY, COUNT_AREAS_QUERY, GET_AREA_BY_ID_QUERY,
+    GET_AREAS_PAGINATED_QUERY, GET_AREAS_PAGINATED_QUERY_ROW_NUM, GET_AREAS_NO_SEARCH_ROW_NUM, COUNT_AREAS_QUERY, GET_AREA_BY_ID_QUERY,
     CHECK_AREA_EXISTS_BY_NAME_QUERY, CREATE_AREA_QUERY,
     UPDATE_AREA_BASE_QUERY_TEMPLATE, TOGGLE_AREA_STATUS_QUERY, 
     GET_ACTIVE_AREAS_SIMPLE_LIST_QUERY
@@ -167,6 +167,7 @@ class AreaService(BaseService):
         
         📊 PAGINACIÓN EFICIENTE COMPATIBLE:
         - Maneja diferencias entre drivers SQL Server (ODBC 17 vs Native Client 10.0)
+        - Usa ROW_NUMBER() para compatibilidad con versiones antiguas de SQL Server
         - Consultas optimizadas sin parámetros NULL para búsquedas vacías
         - Realiza conteo y paginación eficientes
         
@@ -180,32 +181,40 @@ class AreaService(BaseService):
         """
         logger.info(f"Obteniendo áreas paginadas: skip={skip}, limit={limit}, search='{search}'")
         
-        # 🔍 ESTRATEGIA COMPATIBLE CON TODOS LOS DRIVERS
-        # SQL Server Native Client 10.0 tiene problemas con parámetros NULL en LIKE
+        # 🔍 ESTRATEGIA COMPATIBLE CON TODOS LOS DRIVERS Y VERSIONES
+        # SQL Server Native Client 10.0 y versiones antiguas no soportan OFFSET FETCH
         if search and search.strip():
-            # CASO CON BÚSQUEDA: Usar consultas con parámetros
+            # CASO CON BÚSQUEDA: Usar consultas con parámetros y ROW_NUMBER()
             search = search.strip()
             search_param = f"%{search}%"
             where_params = (search, search_param, search_param)
             
-            # Usar consultas originales con filtro
+            # Usar consultas con ROW_NUMBER() para compatibilidad
             count_query = COUNT_AREAS_QUERY
-            paginated_query = GET_AREAS_PAGINATED_QUERY
+            paginated_query = GET_AREAS_PAGINATED_QUERY_ROW_NUM
+            
+            # Calcular rangos para ROW_NUMBER()
+            start_row = skip + 1  # ROW_NUMBER() empieza en 1
+            end_row = skip + limit
+            
+            # Parámetros: search, search_param, search_param, skip, end_row
+            pagination_params = where_params + (skip, end_row)
             use_search = True
         else:
             # CASO SIN BÚSQUEDA: Usar consultas simplificadas sin filtro WHERE
-            # Esto evita problemas con parámetros NULL en drivers antiguos
             where_params = ()
             count_query = """
                 SELECT COUNT(*) as total_count 
                 FROM area_menu
             """
-            paginated_query = """
-                SELECT area_id, nombre, descripcion, icono, es_activo, fecha_creacion
-                FROM area_menu
-                ORDER BY area_id ASC
-                OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-            """
+            paginated_query = GET_AREAS_NO_SEARCH_ROW_NUM
+            
+            # Calcular rangos para ROW_NUMBER()
+            start_row = skip + 1  # ROW_NUMBER() empieza en 1
+            end_row = skip + limit
+            
+            # Parámetros: skip, end_row
+            pagination_params = (skip, end_row)
             use_search = False
 
         try:
@@ -220,18 +229,14 @@ class AreaService(BaseService):
             # 2. 📋 OBTENER DATOS PAGINADOS (solo si hay resultados)
             areas_lista: List[AreaRead] = []
             if total_count > 0 and limit > 0:
-                if use_search:
-                    # Con búsqueda: agregar skip y limit a los parámetros existentes
-                    pagination_params = where_params + (skip, limit)
-                else:
-                    # Sin búsqueda: solo skip y limit
-                    pagination_params = (skip, limit)
-                
                 rows = execute_query(paginated_query, pagination_params)
                 
                 # 🎯 MAPEAR RESULTADOS CON MANEJO DE ERRORES INDIVIDUALES
                 for row_dict in rows:
                     try:
+                        # Remover columna row_num si existe
+                        row_dict.pop('row_num', None)
+                        
                         # Validar y limpiar datos antes de crear el objeto
                         cleaned_row = {
                             key: (value if value is not None else None)

@@ -433,6 +433,43 @@ GET_AREAS_PAGINATED_QUERY = """
     OFFSET ? ROWS FETCH NEXT ? ROWS ONLY; -- Sintaxis SQL Server
 """
 
+# Consulta con ROW_NUMBER() para compatibilidad (para SQL Server Native Client 10.0)
+GET_AREAS_PAGINATED_QUERY_ROW_NUM = """
+    SELECT area_id, nombre, descripcion, icono, es_activo, fecha_creacion
+    FROM (
+        SELECT 
+            area_id, 
+            nombre, 
+            descripcion, 
+            icono, 
+            es_activo, 
+            fecha_creacion,
+            ROW_NUMBER() OVER (ORDER BY area_id ASC) as row_num
+        FROM area_menu
+        WHERE (? IS NULL OR LOWER(nombre) LIKE LOWER(?) OR LOWER(descripcion) LIKE LOWER(?))
+    ) AS numbered_rows
+    WHERE row_num > ? AND row_num <= ?
+    ORDER BY area_id ASC;
+"""
+
+# Consulta sin búsqueda con ROW_NUMBER()
+GET_AREAS_NO_SEARCH_ROW_NUM = """
+    SELECT area_id, nombre, descripcion, icono, es_activo, fecha_creacion
+    FROM (
+        SELECT 
+            area_id, 
+            nombre, 
+            descripcion, 
+            icono, 
+            es_activo, 
+            fecha_creacion,
+            ROW_NUMBER() OVER (ORDER BY area_id ASC) as row_num
+        FROM area_menu
+    ) AS numbered_rows
+    WHERE row_num > ? AND row_num <= ?
+    ORDER BY area_id ASC;
+"""
+
 COUNT_AREAS_QUERY = """
     SELECT
         COUNT(*) as total_count
