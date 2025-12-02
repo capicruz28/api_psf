@@ -16,7 +16,7 @@ from app.db.queries import (
 from app.schemas.area import AreaCreate, AreaUpdate, AreaRead, PaginatedAreaResponse, AreaSimpleList
 
 # 🚨 EXCEPCIONES - Nuevo sistema de manejo de errores
-from app.core.exceptions import ValidationError, NotFoundError, ConflictError, DatabaseError
+from app.core.exceptions import ValidationError, NotFoundError, ConflictError, DatabaseError, ServiceError
 
 # 🏗️ BASE SERVICE - Nueva clase base para manejo consistente de errores
 from app.services.base_service import BaseService
@@ -181,7 +181,11 @@ class AreaService(BaseService):
         logger.info(f"Obteniendo áreas paginadas: skip={skip}, limit={limit}, search='{search}'")
         
         # 🔍 PREPARAR PARÁMETROS DE BÚSQUEDA
-        search_param = f"%{search}%" if search else None
+        if search:
+            search_param = f"%{search}%"
+        else:
+            # En lugar de None, enviar patrón que coincida con todo
+            search_param = '%'
         where_params = (search, search_param, search_param)
         
         # 1. 📊 OBTENER CONTEO TOTAL (para calcular páginas)
