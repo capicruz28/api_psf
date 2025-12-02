@@ -205,11 +205,11 @@ WITH UserRoles AS (
         u.fecha_creacion,
         u.fecha_ultimo_acceso,
         u.fecha_actualizacion,        
-        u.origen_datos, 
+        u.origen_datos,
         u.codigo_trabajador_externo,
         r.rol_id,
-        r.nombre AS nombre_rol
-        -- Añade aquí otros campos de 'usuario' o 'rol' que necesites
+        r.nombre AS nombre_rol,
+        ROW_NUMBER() OVER (ORDER BY u.usuario_id) AS rn
     FROM usuario u
     LEFT JOIN usuario_rol ur ON u.usuario_id = ur.usuario_id AND ur.es_activo = 1
     LEFT JOIN rol r ON ur.rol_id = r.rol_id AND r.es_activo = 1
@@ -222,9 +222,10 @@ WITH UserRoles AS (
             u.apellido LIKE ?
         ))
 )
-SELECT * FROM UserRoles
-ORDER BY usuario_id -- O el campo por el que prefieras ordenar por defecto
-OFFSET ? ROWS FETCH NEXT ? ROWS ONLY;
+SELECT *
+FROM UserRoles
+WHERE rn BETWEEN ((? - 1) * ?) + 1 AND (? * ?)
+ORDER BY rn;
 """
 
 # Consulta para contar el total de usuarios que coinciden con la búsqueda y no están eliminados
