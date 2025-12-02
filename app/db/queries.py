@@ -205,7 +205,7 @@ WITH UserRoles AS (
         u.fecha_creacion,
         u.fecha_ultimo_acceso,
         u.fecha_actualizacion,        
-        u.origen_datos,
+        u.origen_datos, 
         u.codigo_trabajador_externo,
         r.rol_id,
         r.nombre AS nombre_rol,
@@ -224,7 +224,7 @@ WITH UserRoles AS (
 )
 SELECT *
 FROM UserRoles
-WHERE rn BETWEEN ((? - 1) * ?) + 1 AND (? * ?)
+WHERE rn BETWEEN ? AND ?
 ORDER BY rn;
 """
 
