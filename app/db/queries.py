@@ -294,18 +294,29 @@ COUNT_ROLES_PAGINATED = """
 """
 
 SELECT_ROLES_PAGINATED = """
+    WITH RolPaginado AS (
     SELECT
-        rol_id, nombre, descripcion, es_activo, fecha_creacion
-        -- , fecha_actualizacion -- Descomentar si existe y la quieres mostrar
+        rol_id,
+        nombre,
+        descripcion,
+        es_activo,
+        fecha_creacion,
+        ROW_NUMBER() OVER (ORDER BY rol_id) AS rn
     FROM
         dbo.rol
     WHERE (? IS NULL OR (
         LOWER(nombre) LIKE LOWER(?) OR
         LOWER(descripcion) LIKE LOWER(?)
     ))
-    ORDER BY
-        rol_id -- O el campo que prefieras (ej. rol_id)
-    OFFSET ? ROWS FETCH NEXT ? ROWS ONLY;
+)
+SELECT
+    rol_id,
+    nombre,
+    descripcion,
+    es_activo,
+    fecha_creacion
+FROM RolPaginado
+WHERE rn BETWEEN ? AND ?;
     -- Nota: No filtra por es_activo aquí
     -- Usamos LOWER() para búsqueda insensible a mayúsculas/minúsculas
 """
