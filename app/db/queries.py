@@ -422,33 +422,15 @@ GET_ALL_MENUS_ADMIN = "sp_GetAllMenuItemsAdmin" # Asegúrate que este SP devuelv
 # --- QUERIES PARA AREA_MENU (CON PAGINACIÓN Y BÚSQUEDA) ---
 
 GET_AREAS_PAGINATED_QUERY = """
-    WITH AreaPaginada AS (
     SELECT
-        area_id,
-        nombre,
-        descripcion,
-        icono,
-        es_activo,
-        fecha_creacion,
-        ROW_NUMBER() OVER (ORDER BY area_id ASC) AS rn
+        area_id, nombre, descripcion, icono, es_activo, fecha_creacion
     FROM
-        area_menu
+        area_menu -- Nombre de tabla correcto
     WHERE
-        (? IS NULL OR 
-         (nombre IS NOT NULL AND LOWER(nombre) LIKE LOWER(?)) OR 
-         (descripcion IS NOT NULL AND LOWER(descripcion) LIKE LOWER(?))
-        )
-)
-SELECT
-    area_id,
-    nombre,
-    descripcion,
-    icono,
-    es_activo,
-    fecha_creacion
-FROM AreaPaginada
-WHERE rn BETWEEN ? AND ?
-ORDER BY rn;
+        (? IS NULL OR LOWER(nombre) LIKE LOWER(?) OR LOWER(descripcion) LIKE LOWER(?))
+    ORDER BY
+        area_id ASC
+    OFFSET ? ROWS FETCH NEXT ? ROWS ONLY; -- Sintaxis SQL Server
 """
 
 COUNT_AREAS_QUERY = """

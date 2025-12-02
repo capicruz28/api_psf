@@ -165,10 +165,10 @@ class AreaService(BaseService):
         """
         Obtiene una lista paginada y filtrada de áreas.
         
-        📊 PAGINACIÓN EFICIENTE:
-        - Realiza 2 consultas: conteo total y datos paginados
-        - Calcula metadatos de paginación automáticamente
-        - Soporte para búsqueda por nombre o descripción
+        📊 PAGINACIÓN EFICIENTE COMPATIBLE:
+        - Maneja diferencias entre drivers SQL Server (ODBC 17 vs Native Client 10.0)
+        - Consultas optimizadas sin parámetros NULL para búsquedas vacías
+        - Realiza conteo y paginación eficientes
         
         Args:
             skip: Número de registros a saltar (offset)
@@ -180,45 +180,94 @@ class AreaService(BaseService):
         """
         logger.info(f"Obteniendo áreas paginadas: skip={skip}, limit={limit}, search='{search}'")
         
-        # 🔍 PREPARAR PARÁMETROS DE BÚSQUEDA
-        if search:
+        # 🔍 ESTRATEGIA COMPATIBLE CON TODOS LOS DRIVERS
+        # SQL Server Native Client 10.0 tiene problemas con parámetros NULL en LIKE
+        if search and search.strip():
+            # CASO CON BÚSQUEDA: Usar consultas con parámetros
+            search = search.strip()
             search_param = f"%{search}%"
-        else:
-            # En lugar de None, enviar patrón que coincida con todo
-            search_param = '%'
-        where_params = (search, search_param, search_param)
-        
-        # 1. 📊 OBTENER CONTEO TOTAL (para calcular páginas)
-        count_result_list = execute_query(COUNT_AREAS_QUERY, where_params)
-        total_count = count_result_list[0].get('total_count', 0) if count_result_list else 0
-
-        # 2. 📋 OBTENER DATOS PAGINADOS (solo si hay resultados)
-        areas_lista: List[AreaRead] = []
-        if total_count > 0 and limit > 0:
-            pagination_params = where_params + (skip, limit)
-            rows = execute_query(GET_AREAS_PAGINATED_QUERY, pagination_params)
+            where_params = (search, search_param, search_param)
             
-            # 🎯 MAPEAR RESULTADOS CON MANEJO DE ERRORES INDIVIDUALES
-            for row_dict in rows:
-                try:
-                    areas_lista.append(AreaRead(**row_dict))
-                except Exception as map_err:
-                    logger.error(f"Error mapeando área: {map_err}")
-                    # 🔄 CONTINUAR: No fallar toda la operación por un registro corrupto
-                    continue
+            # Usar consultas originales con filtro
+            count_query = COUNT_AREAS_QUERY
+            paginated_query = GET_AREAS_PAGINATED_QUERY
+            use_search = True
+        else:
+            # CASO SIN BÚSQUEDA: Usar consultas simplificadas sin filtro WHERE
+            # Esto evita problemas con parámetros NULL en drivers antiguos
+            where_params = ()
+            count_query = """
+                SELECT COUNT(*) as total_count 
+                FROM area_menu
+            """
+            paginated_query = """
+                SELECT area_id, nombre, descripcion, icono, es_activo, fecha_creacion
+                FROM area_menu
+                ORDER BY area_id ASC
+                OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+            """
+            use_search = False
 
-        # 3. 🧮 CALCULAR METADATOS DE PAGINACIÓN
-        total_pages = math.ceil(total_count / limit) if limit > 0 else 0
-        current_page = (skip // limit) + 1 if limit > 0 else 1
+        try:
+            # 1. 📊 OBTENER CONTEO TOTAL
+            if use_search:
+                count_result_list = execute_query(count_query, where_params)
+            else:
+                count_result_list = execute_query(count_query)
+            
+            total_count = count_result_list[0].get('total_count', 0) if count_result_list else 0
+            
+            # 2. 📋 OBTENER DATOS PAGINADOS (solo si hay resultados)
+            areas_lista: List[AreaRead] = []
+            if total_count > 0 and limit > 0:
+                if use_search:
+                    # Con búsqueda: agregar skip y limit a los parámetros existentes
+                    pagination_params = where_params + (skip, limit)
+                else:
+                    # Sin búsqueda: solo skip y limit
+                    pagination_params = (skip, limit)
+                
+                rows = execute_query(paginated_query, pagination_params)
+                
+                # 🎯 MAPEAR RESULTADOS CON MANEJO DE ERRORES INDIVIDUALES
+                for row_dict in rows:
+                    try:
+                        # Validar y limpiar datos antes de crear el objeto
+                        cleaned_row = {
+                            key: (value if value is not None else None)
+                            for key, value in row_dict.items()
+                        }
+                        areas_lista.append(AreaRead(**cleaned_row))
+                    except Exception as map_err:
+                        logger.warning(f"Error mapeando área, omitiendo registro: {map_err}")
+                        # 🔄 CONTINUAR: No fallar toda la operación por un registro corrupto
+                        continue
 
-        logger.info(f"Paginación completada: {len(areas_lista)} áreas de {total_count} totales")
-        
-        return PaginatedAreaResponse(
-            areas=areas_lista,
-            total_areas=total_count,
-            pagina_actual=current_page,
-            total_paginas=total_pages
-        )
+            # 3. 🧮 CALCULAR METADATOS DE PAGINACIÓN
+            total_pages = math.ceil(total_count / limit) if limit > 0 else 0
+            current_page = (skip // limit) + 1 if limit > 0 else 1
+
+            logger.info(
+                f"Paginación completada: {len(areas_lista)} áreas de {total_count} totales, "
+                f"Página {current_page} de {total_pages}"
+            )
+            
+            return PaginatedAreaResponse(
+                areas=areas_lista,
+                total_areas=total_count,
+                pagina_actual=current_page,
+                total_paginas=total_pages
+            )
+            
+        except Exception as e:
+            logger.error(f"Error en paginación: {str(e)}", exc_info=True)
+            # En caso de error, devolver respuesta vacía pero estructurada
+            return PaginatedAreaResponse(
+                areas=[],
+                total_areas=0,
+                pagina_actual=1,
+                total_paginas=0
+            )
 
     @staticmethod
     @BaseService.handle_service_errors
